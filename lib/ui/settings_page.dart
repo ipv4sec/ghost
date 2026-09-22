@@ -1,0 +1,112 @@
+import 'package:flutter/material.dart';
+
+import '../session.dart';
+import '../ui/theme.dart';
+
+/// 设置页：AppID 本地覆盖（留空 = 使用内置）
+class SettingsPage extends StatefulWidget {
+  const SettingsPage({super.key});
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  late final TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: Session.instance.userAppId);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    await Session.instance.setUserAppId(_ctrl.text);
+    if (!mounted) return;
+    setState(() {}); // 刷新"当前生效"展示
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text(_ctrl.text.trim().isEmpty
+              ? '已恢复内置 AppID'
+              : '已保存，下次扫码登录时生效')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = Session.instance;
+    final usingOverride = s.userAppId.isNotEmpty;
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(title: const Text('设置')),
+      body: ListView(
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text('AppID',
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary)),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TextField(
+              controller: _ctrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                hintText: '留空使用内置 AppID',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Row(
+              children: [
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                      backgroundColor: AppTheme.primary),
+                  onPressed: _save,
+                  child: const Text('保存'),
+                ),
+                const SizedBox(width: 12),
+                TextButton(
+                  onPressed: () {
+                    _ctrl.clear();
+                    _save();
+                  },
+                  child: const Text('恢复内置'),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Text(
+              '当前生效：${s.appId}'
+              '${usingOverride ? '（本地覆盖）' : '（内置）'}',
+              style:
+                  const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              'AppID 即 115 开放平台 client_id，仅保存在本机；'
+              '修改后重新扫码登录时使用。',
+              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
