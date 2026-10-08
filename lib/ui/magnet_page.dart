@@ -88,8 +88,8 @@ class _MagnetPageState extends State<MagnetPage> {
                 const SizedBox(height: 32),
                 if (_error != null) ...[
                   Text(_error!,
-                      style:
-                          const TextStyle(color: AppTheme.accent, fontSize: 13)),
+                      style: TextStyle(
+                          color: AppTheme.accentDeep, fontSize: 13)),
                   const SizedBox(height: 16),
                 ],
                 _submitButton(),
@@ -110,7 +110,7 @@ class _MagnetPageState extends State<MagnetPage> {
             color: AppTheme.primary.withOpacity(0.1),
             borderRadius: BorderRadius.circular(16),
           ),
-          child: const Icon(Icons.cloud_download_outlined,
+          child: Icon(Icons.cloud_download_outlined,
               color: AppTheme.primary, size: 32),
         ),
         const SizedBox(height: 12),
@@ -134,7 +134,7 @@ class _MagnetPageState extends State<MagnetPage> {
             child: SelectableText(
               widget.link,
               maxLines: 3,
-              style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary),
+              style: TextStyle(fontSize: 13, color: AppTheme.textPrimary),
             ),
           ),
           const SizedBox(width: 8),
@@ -147,7 +147,7 @@ class _MagnetPageState extends State<MagnetPage> {
                     duration: Duration(seconds: 1)),
               );
             },
-            child: const Icon(Icons.copy,
+            child: Icon(Icons.copy,
                 size: 18, color: AppTheme.textSecondary),
           ),
         ],
@@ -156,12 +156,12 @@ class _MagnetPageState extends State<MagnetPage> {
   }
 
   Widget _locationRow() {
-    return const Row(
+    return Row(
       children: [
         Icon(Icons.folder_outlined, size: 18, color: AppTheme.textSecondary),
-        SizedBox(width: 6),
+        const SizedBox(width: 6),
         Text('保存位置', style: TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
-        Spacer(),
+        const Spacer(),
         Text('根目录', style: TextStyle(fontSize: 13, color: AppTheme.textPrimary)),
       ],
     );

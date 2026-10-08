@@ -191,7 +191,7 @@ class _SearchPageState extends State<SearchPage> {
           child: Row(
             children: [
               IconButton(
-                icon: const Icon(Icons.arrow_back, color: AppTheme.textPrimary),
+                icon: Icon(Icons.arrow_back, color: AppTheme.textPrimary),
                 tooltip: '返回',
                 onPressed: () => Navigator.of(context).pop(),
               ),
@@ -201,17 +201,17 @@ class _SearchPageState extends State<SearchPage> {
                   focusNode: _focus,
                   cursorColor: AppTheme.primary,
                   textInputAction: TextInputAction.search,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 15, color: AppTheme.textPrimary),
                   onChanged: _onChanged,
                   onSubmitted: (_) => _submit(),
                   decoration: InputDecoration(
                     hintText: '搜索',
-                    hintStyle: const TextStyle(
+                    hintStyle: TextStyle(
                         fontSize: 15, color: AppTheme.textSecondary),
                     suffixIcon: _controller.text.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.close,
+                            icon: Icon(Icons.close,
                                 size: 18, color: AppTheme.textSecondary),
                             onPressed: () {
                               _controller.clear();
@@ -263,7 +263,7 @@ class _SearchPageState extends State<SearchPage> {
               padding: const EdgeInsets.symmetric(horizontal: 14),
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: selected ? AppTheme.primary : const Color(0xFFF1F3F4),
+                color: selected ? AppTheme.primary : AppTheme.divider,
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
@@ -292,7 +292,7 @@ class _SearchPageState extends State<SearchPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(_error!,
-                style: const TextStyle(color: AppTheme.textSecondary)),
+                style: TextStyle(color: AppTheme.textSecondary)),
             const SizedBox(height: 12),
             OutlinedButton(onPressed: _search, child: const Text('重试')),
           ],
@@ -313,7 +313,7 @@ class _SearchPageState extends State<SearchPage> {
               hasRaw
                   ? '当前筛选类型下无结果'
                   : '未找到"${_controller.text.trim()}"相关文件',
-              style: const TextStyle(color: AppTheme.textSecondary),
+              style: TextStyle(color: AppTheme.textSecondary),
             ),
           ],
         ),
@@ -324,7 +324,7 @@ class _SearchPageState extends State<SearchPage> {
       padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
       itemCount: list.length,
       separatorBuilder: (_, __) =>
-          const Divider(height: 1, color: AppTheme.divider),
+          Divider(height: 1, color: AppTheme.divider),
       itemBuilder: (_, i) => _resultRow(list[i]),
     );
   }
@@ -332,7 +332,7 @@ class _SearchPageState extends State<SearchPage> {
   /// 最近搜索：标题行 + 时钟条目（点击回填搜索）
   Widget _historyView() {
     if (_history.isEmpty) {
-      return const Center(
+      return Center(
         child: Text('输入关键词搜索全盘文件',
             style: TextStyle(color: AppTheme.textSecondary)),
       );
@@ -346,14 +346,14 @@ class _SearchPageState extends State<SearchPage> {
             padding: const EdgeInsets.fromLTRB(16, 12, 4, 4),
             child: Row(
               children: [
-                const Text('最近搜索',
+                Text('最近搜索',
                     style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                         color: AppTheme.textPrimary)),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.delete_outline,
+                  icon: Icon(Icons.delete_outline,
                       size: 20, color: AppTheme.textSecondary),
                   tooltip: '清空历史',
                   onPressed: _clearHistory,
@@ -372,14 +372,14 @@ class _SearchPageState extends State<SearchPage> {
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 child: Row(
                   children: [
-                    const Icon(Icons.access_time,
+                    Icon(Icons.access_time,
                         size: 18, color: AppTheme.textSecondary),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(kw,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 14, color: AppTheme.textPrimary)),
                     ),
                   ],
@@ -387,7 +387,7 @@ class _SearchPageState extends State<SearchPage> {
               ),
             ),
             if (i < _history.length)
-              const Divider(height: 1, indent: 46, color: AppTheme.divider),
+              Divider(height: 1, indent: 46, color: AppTheme.divider),
           ],
         );
       },
@@ -411,7 +411,7 @@ class _SearchPageState extends State<SearchPage> {
                   Text(f.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 15, color: AppTheme.textPrimary)),
                   const SizedBox(height: 2),
                   // 副标题：时间（文件夹/文件都有），文件多一项大小（与主页一致）
@@ -420,7 +420,7 @@ class _SearchPageState extends State<SearchPage> {
                       if (f.mtime != null) fmtDate(f.mtime!),
                       if (!f.isDir) formatBytes(f.size),
                     ].join(' | '),
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12, color: AppTheme.textSecondary),
                   ),
                 ],
@@ -431,7 +431,7 @@ class _SearchPageState extends State<SearchPage> {
               height: 40,
               child: IconButton(
                 padding: EdgeInsets.zero,
-                icon: const Icon(Icons.more_vert,
+                icon: Icon(Icons.more_vert,
                     size: 20, color: AppTheme.textSecondary),
                 onPressed: () => _showInfoSheet(f),
               ),
@@ -475,7 +475,7 @@ class _SearchPageState extends State<SearchPage> {
                   width: double.infinity,
                   child: FilledButton.icon(
                     style: FilledButton.styleFrom(
-                        backgroundColor: AppTheme.accent),
+                        backgroundColor: AppTheme.primary),
                     onPressed: () {
                       Navigator.of(ctx).pop();
                       Navigator.of(context).push(MaterialPageRoute(
@@ -501,11 +501,11 @@ class _SearchPageState extends State<SearchPage> {
             SizedBox(
                 width: 64,
                 child: Text(k,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 13, color: AppTheme.textSecondary))),
             Expanded(
               child: Text(v,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 13, color: AppTheme.textPrimary)),
             ),
           ],

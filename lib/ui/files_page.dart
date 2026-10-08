@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
@@ -20,7 +23,7 @@ class DirEntry {
 
 /// 文件浏览页（100% 参照 Amaze 截图布局）
 ///
-/// - 整块深蓝顶栏：app 名 + 路径行 + 统计行（连体，白字）
+/// - 整块深蓝顶栏：app 名（路径行 + 统计行暂时隐藏，恢复见 _header 内注释）
 /// - 列表行：玫红圆图标 + 名称/灰色时间副标题 + 行尾 ⋮
 /// - 全宽细分隔线；右下玫红 FAB 新建文件夹
 class FilesPage extends StatefulWidget {
@@ -72,6 +75,11 @@ class _FilesPageState extends State<FilesPage>
   String? _cutFid;
   String? _cutName;
 
+  // 根目录"再划一次退出"：上次返回手势时间 + 居中提示的自动清理
+  DateTime? _lastBackAt;
+  Timer? _exitHintTimer;
+  OverlayEntry? _exitHint;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -83,6 +91,13 @@ class _FilesPageState extends State<FilesPage>
     ];
     _restorePrefs();
     _reload();
+  }
+
+  @override
+  void dispose() {
+    _exitHintTimer?.cancel();
+    _exitHint?.remove();
+    super.dispose();
   }
 
   Future<void> _restorePrefs() async {
@@ -99,16 +114,46 @@ class _FilesPageState extends State<FilesPage>
     await p.setBool('ghost.grid', _gridView);
   }
 
+  /// 屏幕正中"再划一次退出此应用"提示：不拦截点击，2 秒后自动消失
+  void _showExitHint() {
+    _exitHintTimer?.cancel();
+    _exitHint?.remove();
+    _exitHint = OverlayEntry(
+      builder: (_) => IgnorePointer(
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text(
+              '再划一次退出此应用',
+              style: TextStyle(color: Colors.white, fontSize: 15),
+            ),
+          ),
+        ),
+      ),
+    );
+    Overlay.of(context).insert(_exitHint!);
+    _exitHintTimer = Timer(const Duration(seconds: 2), () {
+      _exitHint?.remove();
+      _exitHint = null;
+    });
+  }
+
   DirEntry get _dir => _stack.last;
 
   /// 面包屑式路径文本：/ 子目录 / 孙目录（不显示根级"全部文件"）。
   /// 以本地导航栈为准——服务端 path 数组可能包含与实际导航无关的
   /// 系统目录段（如在"文件"文件夹里返回 /全部文件/小视频/文件），
   /// 直接拼接会多显示目录名
-  String get _pathText {
-    final names = [for (final d in _stack.skip(1)) d.name];
-    return names.isEmpty ? '/' : '/ ${names.join(' /')}';
-  }
+  ///
+  /// 顶栏路径行暂时隐藏，此 getter 一并注释（恢复路径行时取消注释）
+  // String get _pathText {
+  //   final names = [for (final d in _stack.skip(1)) d.name];
+  //   return names.isEmpty ? '/' : '/ ${names.join(' /')}';
+  // }
 
   Future<void> _reload() async {
     // 同一目录/排序的刷新进行中：合并本次触发，避免叠加请求触发限流（405）
@@ -300,10 +345,28 @@ class _FilesPageState extends State<FilesPage>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return PopScope(
-      canPop: _stack.length <= 1,
+    // 顶栏浅色 → 深色状态栏图标；珊瑚/暗夜主题顶栏深，用浅色图标
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: AppTheme.current.lightHeader
+          ? SystemUiOverlayStyle.dark
+          : SystemUiOverlayStyle.light,
+      child: PopScope(
+      canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _goUp();
+        if (didPop) return;
+        if (_stack.length > 1) {
+          _goUp();
+          return;
+        }
+        // 根目录：第一次返回手势只提示，2 秒内第二次才退出
+        final now = DateTime.now();
+        if (_lastBackAt != null &&
+            now.difference(_lastBackAt!) < const Duration(seconds: 2)) {
+          SystemNavigator.pop();
+          return;
+        }
+        _lastBackAt = now;
+        _showExitHint();
       },
       child: Scaffold(
         backgroundColor: Colors.white,
@@ -322,36 +385,38 @@ class _FilesPageState extends State<FilesPage>
         //   child: const Icon(Icons.add),
         // ),
       ),
+      ),
     );
   }
 
-  /// 整块深蓝顶栏（app 名行 + 路径行 + 统计行连体）
+  /// 整块象牙顶栏（app 名行；路径行 + 统计行暂时隐藏，恢复时取消注释）
   Widget _header() {
-    final folders = _items.where((e) => e.isDir).length;
-    final files = _items.length - folders;
-    final stat = _count > _items.length
-        ? '$folders+个文件夹，$files+个文件'
-        : '$folders个文件夹，$files个文件';
+    // final folders = _items.where((e) => e.isDir).length;
+    // final files = _items.length - folders;
+    // final stat = _count > _items.length
+    //     ? '$folders+个文件夹，$files+个文件'
+    //     : '$folders个文件夹，$files个文件';
     return Material(
-      color: AppTheme.primary,
+      color: AppTheme.header,
       child: SafeArea(
         bottom: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 第一行：汉堡 + 标题 + 右侧图标组
+            // 第一行：汉堡 + 标题 + 右侧图标组（路径/统计行隐藏后行高
+            // 52→64：48 的图标按钮留出上下各 8 的余量，单独成行不显挤）
             SizedBox(
-              height: 52,
+              height: 64,
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.menu, color: Colors.white),
+                    icon: Icon(Icons.menu, color: AppTheme.textPrimary),
                     tooltip: '菜单',
                     onPressed: widget.onOpenProfile,
                   ),
                   const Expanded(child: SizedBox()),
                   IconButton(
-                    icon: const Icon(Icons.search, color: Colors.white),
+                    icon: Icon(Icons.search, color: AppTheme.textPrimary),
                     tooltip: '搜索',
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const SearchPage()),
@@ -359,7 +424,8 @@ class _FilesPageState extends State<FilesPage>
                   ),
                   PopupMenuButton<String>(
                     tooltip: '更多',
-                    icon: const Icon(Icons.more_vert, color: Colors.white),
+                    icon: Icon(Icons.more_vert,
+                        color: AppTheme.textPrimary),
                     color: Colors.white,
                     shape: const RoundedRectangleBorder(
                         borderRadius: BorderRadius.zero),
@@ -383,28 +449,30 @@ class _FilesPageState extends State<FilesPage>
                 ],
               ),
             ),
-            // 第二行：路径（无水波纹点击效果；点按仍返回上级）
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _goUp,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 2),
-                child: Text(
-                  _pathText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                ),
-              ),
-            ),
-            // 第三行：统计
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-              child: Text(
-                stat,
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-            ),
+            // 第二行：路径（无水波纹点击效果；点按仍返回上级）——暂时隐藏
+            // GestureDetector(
+            //   behavior: HitTestBehavior.opaque,
+            //   onTap: _goUp,
+            //   child: Padding(
+            //     padding: const EdgeInsets.fromLTRB(16, 4, 16, 2),
+            //     child: Text(
+            //       _pathText,
+            //       maxLines: 1,
+            //       overflow: TextOverflow.ellipsis,
+            //       style: const TextStyle(color: Colors.white, fontSize: 14),
+            //     ),
+            //   ),
+            // ),
+            // // 第三行：统计（"X个文件夹，X个文件"）——暂时隐藏
+            // Padding(
+            //   padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            //   child: Text(
+            //     stat,
+            //     style: const TextStyle(color: Colors.white70, fontSize: 12),
+            //   ),
+            // ),
+            // 不再额外垫底部间距：图标行在 64 高度内居中，
+            // 搜索图标上方/下方的留白保持一致
           ],
         ),
       ),
@@ -421,7 +489,7 @@ class _FilesPageState extends State<FilesPage>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           if (selected)
-            const Icon(Icons.check, size: 18, color: AppTheme.primary)
+            Icon(Icons.check, size: 18, color: AppTheme.primary)
           else
             const SizedBox(width: 18),
           const SizedBox(width: 8),
@@ -441,10 +509,10 @@ class _FilesPageState extends State<FilesPage>
     }
     if (_items.isEmpty) {
       return ListView(
-        children: const [
-          SizedBox(height: 120),
+        children: [
+          const SizedBox(height: 120),
           Icon(Icons.folder_open, size: 64, color: AppTheme.textSecondary),
-          SizedBox(height: 12),
+          const SizedBox(height: 12),
           Center(
               child: Text('这个文件夹空空如也',
                   style: TextStyle(color: AppTheme.textSecondary))),
@@ -457,7 +525,7 @@ class _FilesPageState extends State<FilesPage>
     );
   }
 
-  /// 列表视图：行 = 圆图标 | 名称+时间副标题 | ⋮；全宽分隔线
+  /// 列表视图：行 = 圆图标 | 名称+时间副标题 | ⋮（行间分隔线暂时隐藏）
   Widget _buildList() {
     return ListView.separated(
       // 显式传 padding：ScrollView 在 padding 为 null 时会把 MediaQuery 的
@@ -465,8 +533,9 @@ class _FilesPageState extends State<FilesPage>
       // 多出一条状态栏高度的白边）。顶部归零，底部保留系统导航条 inset。
       padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
       itemCount: _items.length + 1,
-      separatorBuilder: (_, __) =>
-          const Divider(height: 1, color: AppTheme.divider),
+      // separatorBuilder: (_, __) =>
+      //     Divider(height: 1, color: AppTheme.divider),
+      separatorBuilder: (_, __) => const SizedBox.shrink(),
       itemBuilder: (ctx, i) {
         if (i == _items.length) {
           _maybeLoadMore();
@@ -476,9 +545,12 @@ class _FilesPageState extends State<FilesPage>
         return _FadeCollapse(
           key: ValueKey('row-${f.fid}'),
           removing: _removingIds.contains(f.fid),
-          child: InkWell(
+          // Builder：拿到行自身的 RenderBox，作为弹出菜单的锚定区域
+          child: Builder(
+            builder: (rowCtx) => InkWell(
             onTap: () => _onItemTap(f),
-            onLongPress: () => _showInfoSheet(f),
+            // 长按 = 原 ⋮ 菜单（剪切/删除/重命名）；详情改由点按非视频文件进入
+            onLongPress: () => _showRowMenu(rowCtx, f),
             child: Padding(
               padding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -493,7 +565,7 @@ class _FilesPageState extends State<FilesPage>
                         Text(f.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 15, color: AppTheme.textPrimary)),
                         const SizedBox(height: 2),
                         // 副标题：时间（文件夹/文件都有），文件多一项大小
@@ -502,35 +574,37 @@ class _FilesPageState extends State<FilesPage>
                             if (f.mtime != null) fmtDate(f.mtime!),
                             if (!f.isDir) formatBytes(f.size),
                           ].join(' | '),
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 12, color: AppTheme.textSecondary),
                         ),
                       ],
                     ),
                   ),
-                  // 行尾 ⋮：剪切/删除/重命名 操作菜单
-                  SizedBox(
-                    width: 36,
-                    height: 40,
-                    child: PopupMenuButton<String>(
-                      padding: EdgeInsets.zero,
-                      tooltip: '操作',
-                      icon: const Icon(Icons.more_vert,
-                          size: 20, color: AppTheme.textSecondary),
-                      color: Colors.white,
-                      shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.zero),
-                      onSelected: (v) => _onRowMenu(v, f),
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'cut', child: Text('剪切')),
-                        PopupMenuItem(value: 'delete', child: Text('删除')),
-                        PopupMenuItem(value: 'rename', child: Text('重命名')),
-                      ],
-                    ),
-                  ),
+                  // 行尾 ⋮：剪切/删除/重命名 操作菜单——暂时隐藏，
+                  // 功能迁至长按（_showRowMenu），恢复时取消注释
+                  // SizedBox(
+                  //   width: 36,
+                  //   height: 40,
+                  //   child: PopupMenuButton<String>(
+                  //     padding: EdgeInsets.zero,
+                  //     tooltip: '操作',
+                  //     icon: Icon(Icons.more_vert,
+                  //         size: 20, color: AppTheme.textSecondary),
+                  //     color: Colors.white,
+                  //     shape: const RoundedRectangleBorder(
+                  //         borderRadius: BorderRadius.zero),
+                  //     onSelected: (v) => _onRowMenu(v, f),
+                  //     itemBuilder: (_) => const [
+                  //       PopupMenuItem(value: 'cut', child: Text('剪切')),
+                  //       PopupMenuItem(value: 'delete', child: Text('删除')),
+                  //       PopupMenuItem(value: 'rename', child: Text('重命名')),
+                  //     ],
+                  //   ),
+                  // ),
                 ],
               ),
             ),
+          ),
           ),
         );
       },
@@ -564,7 +638,7 @@ class _FilesPageState extends State<FilesPage>
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: const BorderSide(color: AppTheme.divider),
+              side: BorderSide(color: AppTheme.divider),
             ),
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
@@ -653,6 +727,32 @@ class _FilesPageState extends State<FilesPage>
 
   // ---------------- 行菜单操作：剪切 / 删除 / 重命名 ----------------
 
+  /// 长按操作菜单：原行尾 ⋮ 的 PopupMenu 样式（白底直角），
+  /// 锚定在行右端（原 ⋮ 一侧）向下弹出，而非底部面板
+  Future<void> _showRowMenu(BuildContext rowCtx, FileItem f) async {
+    final rowBox = rowCtx.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (rowBox == null || overlay == null) return;
+    final anchor = RelativeRect.fromRect(
+      Rect.fromLTWH(rowBox.size.width - 48, 0, 48, rowBox.size.height)
+          .shift(rowBox.localToGlobal(Offset.zero, ancestor: overlay)),
+      Offset.zero & overlay.size,
+    );
+    final v = await showMenu<String>(
+      context: context,
+      position: anchor,
+      color: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      items: const [
+        PopupMenuItem(value: 'cut', child: Text('剪切')),
+        PopupMenuItem(value: 'delete', child: Text('删除')),
+        PopupMenuItem(value: 'rename', child: Text('重命名')),
+      ],
+    );
+    if (v != null) _onRowMenu(v, f);
+  }
+
   void _onRowMenu(String v, FileItem f) {
     switch (v) {
       case 'cut':
@@ -680,7 +780,7 @@ class _FilesPageState extends State<FilesPage>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Row(
         children: [
-          const Icon(Icons.content_cut,
+          Icon(Icons.content_cut,
               size: 16, color: AppTheme.textSecondary),
           const SizedBox(width: 8),
           Expanded(
@@ -688,7 +788,7 @@ class _FilesPageState extends State<FilesPage>
               '已剪切「$_cutName」',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 12, color: AppTheme.textPrimary),
             ),
           ),
@@ -851,7 +951,7 @@ class _FilesPageState extends State<FilesPage>
                   width: double.infinity,
                   child: FilledButton.icon(
                     style: FilledButton.styleFrom(
-                        backgroundColor: AppTheme.accent),
+                        backgroundColor: AppTheme.primary),
                     onPressed: () {
                       Navigator.of(ctx).pop();
                       Navigator.of(context).push(MaterialPageRoute(
@@ -879,12 +979,12 @@ class _FilesPageState extends State<FilesPage>
           SizedBox(
             width: 64,
             child: Text(k,
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 13, color: AppTheme.textSecondary)),
           ),
           Expanded(
             child: Text(v,
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 13, color: AppTheme.textPrimary)),
           ),
         ],
@@ -975,9 +1075,9 @@ class _ErrorView extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.cloud_off, size: 64, color: AppTheme.textSecondary),
+          Icon(Icons.cloud_off, size: 64, color: AppTheme.textSecondary),
           const SizedBox(height: 12),
-          Text(message, style: const TextStyle(color: AppTheme.textSecondary)),
+          Text(message, style: TextStyle(color: AppTheme.textSecondary)),
           const SizedBox(height: 16),
           OutlinedButton(onPressed: onRetry, child: const Text('重试')),
         ],

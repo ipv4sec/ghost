@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../session.dart';
 import '../ui/theme.dart';
 
-/// 设置页：AppID 本地覆盖（留空 = 使用内置）
+/// 设置页：主题选择 + AppID 本地覆盖（留空 = 使用内置）
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -38,6 +38,44 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  /// 主题选择行：色卡 5 圆点 + 名称，右侧选中勾
+  Widget _themeRow(GhostPalette p) {
+    final selected = p == AppTheme.current;
+    return InkWell(
+      onTap: () async {
+        await ThemeManager.instance.select(p);
+        if (mounted) setState(() {}); // 刷新选中勾（页面其余处随全局重建变色）
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            for (final c in p.swatches) ...[
+              Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: c,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.black12),
+                ),
+              ),
+              const SizedBox(width: 4),
+            ],
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(p.name,
+                  style: TextStyle(fontSize: 15, color: AppTheme.textPrimary)),
+            ),
+            Icon(Icons.check,
+                size: 20,
+                color: selected ? AppTheme.primary : Colors.transparent),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = Session.instance;
@@ -47,8 +85,19 @@ class _SettingsPageState extends State<SettingsPage> {
       appBar: AppBar(title: const Text('设置')),
       body: ListView(
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text('主题',
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary)),
+          ),
+          // 9 套主题（配色.png 色卡）：色卡圆点预览 + 名称，点按切换
+          ...ghostPalettes.map(_themeRow),
+          Divider(height: 1, color: AppTheme.divider),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text('AppID',
                 style: TextStyle(
                     fontSize: 14,
@@ -94,11 +143,11 @@ class _SettingsPageState extends State<SettingsPage> {
               '当前生效：${s.appId}'
               '${usingOverride ? '（本地覆盖）' : '（内置）'}',
               style:
-                  const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                  TextStyle(fontSize: 12, color: AppTheme.textSecondary),
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Text(
               'AppID 即 115 开放平台 client_id，仅保存在本机；'
               '修改后重新扫码登录时使用。',

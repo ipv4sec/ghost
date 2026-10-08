@@ -172,7 +172,7 @@ class _TransferPageState extends State<TransferPage> {
           children: [
             Text(_error!,
                 style:
-                    const TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
+                    TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
             const SizedBox(height: 12),
             OutlinedButton(onPressed: () => _load(reset: true), child: const Text('重试')),
           ],
@@ -180,15 +180,15 @@ class _TransferPageState extends State<TransferPage> {
       );
     }
     if (_tasks.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.cloud_off_outlined, size: 64, color: AppTheme.textSecondary),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             Text('暂无云下载任务',
                 style: TextStyle(fontSize: 15, color: AppTheme.textSecondary)),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             Text('点击磁力链接即可添加到云下载',
                 style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
           ],
@@ -200,7 +200,7 @@ class _TransferPageState extends State<TransferPage> {
       child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
         itemCount: 1 + _shown.length + (_hasMore ? 1 : 0),
-        separatorBuilder: (_, __) => const Divider(
+        separatorBuilder: (_, __) => Divider(
             height: 1, color: AppTheme.divider, indent: 56),
         itemBuilder: (_, i) {
           // 第 0 项：任务总数摘要；其后为任务；最后一项为"加载更多"
@@ -209,7 +209,7 @@ class _TransferPageState extends State<TransferPage> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: Text(
                   '共 $_count 个任务 · 显示 ${_shown.length} 条 · 第 $_page/$_pageCount 页',
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 12, color: AppTheme.textSecondary)),
             );
           }
@@ -252,7 +252,7 @@ class _TransferPageState extends State<TransferPage> {
     final iconColor = t.done
         ? Colors.green
         : t.failed
-            ? AppTheme.accent
+            ? AppTheme.accentDeep // 深金：金黄在白底上对比不足
             : AppTheme.primary;
     final time =
         t.addTime > 0 ? fmtDate(DateTime.fromMillisecondsSinceEpoch(t.addTime * 1000)) : '';
@@ -292,7 +292,7 @@ class _TransferPageState extends State<TransferPage> {
               '${t.statusText}'
               '${t.size > 0 ? ' · ${formatBytes(t.size)}' : ''}'
               '${time.isNotEmpty ? ' · $time' : ''}',
-              style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
             ),
             if (t.status == 1) ...[
               const SizedBox(height: 6),
@@ -306,7 +306,7 @@ class _TransferPageState extends State<TransferPage> {
               ),
               const SizedBox(height: 2),
               Text('${t.percentDone}%',
-                  style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                  style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
             ],
           ],
         ),

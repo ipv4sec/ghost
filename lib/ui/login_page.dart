@@ -104,7 +104,7 @@ class _LoginPageState extends State<LoginPage> {
                 Container(
                   width: 72,
                   height: 72,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: AppTheme.primary,
                     shape: BoxShape.circle,
                   ),
@@ -155,12 +155,13 @@ class _LoginPageState extends State<LoginPage> {
               width: 200,
               height: 200,
               color: Colors.white.withOpacity(0.8),
-              child: const Column(
+              child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.check_circle, color: AppTheme.primary, size: 48),
-                  SizedBox(height: 8),
-                  Text('扫码成功', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  const Text('扫码成功',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
                 ],
               ),
             ),

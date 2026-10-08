@@ -85,7 +85,7 @@ class _ProfilePageState extends State<ProfilePage>
             children: [
               Text(_error!,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppTheme.textSecondary)),
+                  style: TextStyle(color: AppTheme.textSecondary)),
               const SizedBox(height: 12),
               OutlinedButton(onPressed: _load, child: const Text('重试')),
             ],
@@ -157,7 +157,7 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
-  /// 金色渐变 VIP 卡片（皇冠 + 等级/开通）
+  /// 粉色渐变 VIP 卡片（皇冠 + 等级/开通），粉色系配色
   Widget _vipCard(UserInfo u) {
     final hasVip = u.vipExpire > 0 && u.vipName != '原石会员';
     return Padding(
@@ -166,10 +166,11 @@ class _ProfilePageState extends State<ProfilePage>
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
+          // 渐变两端随主题（浅 → 深，配深字）
+          gradient: LinearGradient(
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
-            colors: [Color(0xFFF7D774), Color(0xFFD4A017)],
+            colors: [AppTheme.vipStart, AppTheme.vipEnd],
           ),
           borderRadius: BorderRadius.circular(10),
         ),
@@ -177,7 +178,7 @@ class _ProfilePageState extends State<ProfilePage>
           children: [
             Icon(
               hasVip ? Icons.workspace_premium : Icons.workspace_premium_outlined,
-              color: const Color(0xFF6B4E00),
+              color: AppTheme.textPrimary,
               size: 26,
             ),
             const SizedBox(width: 10),
@@ -187,8 +188,8 @@ class _ProfilePageState extends State<ProfilePage>
                 children: [
                   Text(
                     hasVip ? u.vipName : '开通会员',
-                    style: const TextStyle(
-                      color: Color(0xFF5C4300),
+                    style: TextStyle(
+                      color: AppTheme.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
                     ),
@@ -197,17 +198,18 @@ class _ProfilePageState extends State<ProfilePage>
                     const SizedBox(height: 2),
                     Text(
                       '有效期至 ${fmtExpire(u.vipExpire)}',
-                      style: const TextStyle(
-                          color: Color(0xFF8A6D1E), fontSize: 11),
+                      style: TextStyle(
+                          color: AppTheme.textSecondary, fontSize: 11),
                     ),
                   ],
                 ],
               ),
             ),
             if (!hasVip)
-              const Text(
+              Text(
                 '畅享更多权益',
-                style: TextStyle(color: Color(0xFF6B4E00), fontSize: 11),
+                style:
+                    TextStyle(color: AppTheme.textPrimary, fontSize: 11),
               ),
           ],
         ),
@@ -224,10 +226,10 @@ class _ProfilePageState extends State<ProfilePage>
         children: [
           Row(
             children: [
-              const Icon(Icons.cloud_queue,
+              Icon(Icons.cloud_queue,
                   size: 18, color: AppTheme.primary),
               const SizedBox(width: 6),
-              const Text('存储空间',
+              Text('存储空间',
                   style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -235,7 +237,7 @@ class _ProfilePageState extends State<ProfilePage>
               const Spacer(),
               Text(
                 '${(u.usagePercent * 100).toStringAsFixed(1)}%',
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 12,
                     color: AppTheme.primary,
                     fontWeight: FontWeight.w600),
@@ -249,21 +251,22 @@ class _ProfilePageState extends State<ProfilePage>
               value: u.usagePercent,
               minHeight: 8,
               backgroundColor: AppTheme.divider,
-              color: const Color(0xFF4A90D9),
+              color: AppTheme.primary,
             ),
           ),
           const SizedBox(height: 8),
           Text(
             '已用 ${_fmt(u.usedText, u.usedBytes)} / ${_fmt(u.totalText, u.totalBytes)}',
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 13, color: AppTheme.textSecondary),
           ),
-          const SizedBox(height: 4),
-          Text(
-            '第三方畅用权益：${u.tpRights ? '已开通' : '未开通'}',
-            style: const TextStyle(
-                fontSize: 11, color: AppTheme.textSecondary),
-          ),
+          // 第三方畅用权益行——暂时隐藏，恢复时取消注释
+          // const SizedBox(height: 4),
+          // Text(
+          //   '第三方畅用权益：${u.tpRights ? '已开通' : '未开通'}',
+          //   style: TextStyle(
+          //       fontSize: 11, color: AppTheme.textSecondary),
+          // ),
         ],
       ),
     );
@@ -277,7 +280,7 @@ class _ProfilePageState extends State<ProfilePage>
   Widget _menuSection(UserInfo u) {
     return Column(
       children: [
-        const Divider(height: 1, color: AppTheme.divider),
+        Divider(height: 1, color: AppTheme.divider),
         _menuItem(
           icon: Icons.cloud_download_outlined,
           iconColor: AppTheme.primary,
@@ -291,7 +294,7 @@ class _ProfilePageState extends State<ProfilePage>
             );
           },
         ),
-        const Divider(height: 1, color: AppTheme.divider),
+        Divider(height: 1, color: AppTheme.divider),
         _menuItem(
           icon: Icons.settings_outlined,
           iconColor: AppTheme.textSecondary,
@@ -304,7 +307,7 @@ class _ProfilePageState extends State<ProfilePage>
             );
           },
         ),
-        const Divider(height: 1, color: AppTheme.divider),
+        Divider(height: 1, color: AppTheme.divider),
         _menuItem(
           icon: Icons.info_outline,
           iconColor: AppTheme.textSecondary,
@@ -317,7 +320,7 @@ class _ProfilePageState extends State<ProfilePage>
             );
           },
         ),
-        const Divider(height: 1, color: AppTheme.divider),
+        Divider(height: 1, color: AppTheme.divider),
       ],
     );
   }
@@ -342,18 +345,18 @@ class _ProfilePageState extends State<ProfilePage>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title,
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 15, color: AppTheme.textPrimary)),
                   if (subtitle != null) ...[
                     const SizedBox(height: 2),
                     Text(subtitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 11, color: AppTheme.textSecondary)),
                   ],
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right,
+            Icon(Icons.chevron_right,
                 size: 20, color: AppTheme.textSecondary),
           ],
         ),

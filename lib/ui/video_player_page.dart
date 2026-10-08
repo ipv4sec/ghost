@@ -54,6 +54,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   Timer? _hideTimer;
   int _resumeSec = 0;
 
+  /// 上一 tick 的播放态：检测 播放→暂停（含系统音频焦点丢失等外部暂停）
+  /// 与 暂停→播放 的切换，暂停期间控件常驻显示
+  bool _wasPlaying = true;
+
   /// 右下角方向锁：默认锁定（进入时强制双横屏）；解锁后完全跟随传感器
   /// （手机竖过来 = 竖屏播放）；再点锁定 = 固定当前方向（横锁横、竖锁竖）
   bool _orientationLocked = true;
@@ -258,13 +262,29 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   void _onTick() {
     if (!mounted) return;
+    final playing = _controller?.value.isPlaying ?? _wasPlaying;
+    if (playing != _wasPlaying) {
+      _wasPlaying = playing;
+      if (playing) {
+        _scheduleHide(); // 恢复播放：继续 3 秒无操作自动隐藏
+      } else {
+        // 暂停（按钮或外部事件）：取消在途隐藏计时，控件常驻
+        _hideTimer?.cancel();
+        setState(() => _controlsVisible = true);
+      }
+    }
     setState(() {}); // 刷新进度条
   }
 
   void _scheduleHide() {
     _hideTimer?.cancel();
-    _hideTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted) setState(() => _controlsVisible = false);
+    // 暂停期间控件常驻，不安排自动隐藏
+    if (!(_controller?.value.isPlaying ?? false)) return;
+    _hideTimer = Timer(const Duration(seconds: 2), () {
+      // 计时期间可能被外部暂停，触发时再校验一次
+      if (mounted && (_controller?.value.isPlaying ?? false)) {
+        setState(() => _controlsVisible = false);
+      }
     });
   }
 
@@ -406,7 +426,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    // 黑底页显式用浅色状态栏图标（其余浅色页为深色）
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
       backgroundColor: Colors.black,
       // opaque：整屏接收指针事件。默认 deferToChild 时，视频宽高比与屏幕
       // 不一致导致 Center/AspectRatio 外的黑边区域无子控件可命中，手势
@@ -414,19 +437,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       // 返回按钮/进度条在 hit-test 更深层，竞技场中仍优先，不受影响
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTapUp: (d) {
-          final size = MediaQuery.of(context).size;
-          // 中心区域（屏宽/高各 ±20%）点按 = 播放/暂停，其余区域 = 切换控件显示
-          final inCenter =
-              (d.localPosition.dx - size.width / 2).abs() < size.width * 0.2 &&
-                  (d.localPosition.dy - size.height / 2).abs() <
-                      size.height * 0.2;
-          if (inCenter) {
-            _togglePlay();
-          } else {
-            setState(() => _controlsVisible = !_controlsVisible);
-            if (_controlsVisible) _scheduleHide();
-          }
+        // 点按仅切换控件显示/隐藏，与播放/暂停状态无关；
+        // 播放中显示后 2 秒无操作自动隐藏，暂停期间不自动隐藏
+        onTap: () {
+          setState(() => _controlsVisible = !_controlsVisible);
+          if (_controlsVisible) _scheduleHide();
         },
         onVerticalDragStart: _onVerticalDragStart,
         onVerticalDragUpdate: _onVerticalDragUpdate,
@@ -457,6 +472,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             if (_gestureKind != null) _gestureIndicator(),
           ],
         ),
+      ),
       ),
     );
   }
