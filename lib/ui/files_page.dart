@@ -11,6 +11,7 @@ import '../session.dart';
 import '../ui/theme.dart';
 import '../util/formatters.dart';
 import 'search_page.dart';
+import 'transfer_page.dart';
 import 'video_player_page.dart';
 
 /// 目录栈中的一层
@@ -27,13 +28,18 @@ class DirEntry {
 /// - 列表行：玫红圆图标 + 名称/灰色时间副标题 + 行尾 ⋮
 /// - 全宽细分隔线；右下玫红 FAB 新建文件夹
 class FilesPage extends StatefulWidget {
-  const FilesPage({super.key, this.onOpenProfile, this.initialDir});
+  const FilesPage(
+      {super.key, this.onOpenProfile, this.initialDir, this.isHome = false});
 
   /// 顶栏汉堡按钮回调（打开"我的"）
   final VoidCallback? onOpenProfile;
 
   /// 初始目录（如云下载任务的保存位置）；不传则从根目录开始
   final DirEntry? initialDir;
+
+  /// 是否为主页实例：主页根目录的返回手势走"再划一次退出"；
+  /// 推入的实例（如云下载任务位置页）在栈底直接 pop 回上一页
+  final bool isHome;
 
   @override
   State<FilesPage> createState() => _FilesPageState();
@@ -351,14 +357,16 @@ class _FilesPageState extends State<FilesPage>
           ? SystemUiOverlayStyle.dark
           : SystemUiOverlayStyle.light,
       child: PopScope(
-      canPop: false,
+      // 主页实例拦截所有返回手势（子目录返回上级、根目录"再划一次退出"）；
+      // 推入的实例在栈底直接 pop 回上一页
+      canPop: !widget.isHome && _stack.length <= 1,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
         if (_stack.length > 1) {
           _goUp();
           return;
         }
-        // 根目录：第一次返回手势只提示，2 秒内第二次才退出
+        // 主页根目录：第一次返回手势只提示，2 秒内第二次才退出
         final now = DateTime.now();
         if (_lastBackAt != null &&
             now.difference(_lastBackAt!) < const Duration(seconds: 2)) {
@@ -420,6 +428,15 @@ class _FilesPageState extends State<FilesPage>
                     tooltip: '搜索',
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const SearchPage()),
+                    ),
+                  ),
+                  // 下载入口（原个人信息抽屉菜单项，改为顶栏图标）
+                  IconButton(
+                    icon: Icon(Icons.cloud_download_outlined,
+                        color: AppTheme.textPrimary),
+                    tooltip: '下载',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const TransferPage()),
                     ),
                   ),
                   PopupMenuButton<String>(

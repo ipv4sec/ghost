@@ -4,7 +4,6 @@ import '../models/models.dart';
 import '../network/api_client.dart';
 import '../session.dart';
 import '../ui/theme.dart';
-import '../ui/transfer_page.dart';
 import '../util/formatters.dart';
 import 'about_page.dart';
 import 'settings_page.dart';
@@ -14,7 +13,7 @@ import 'settings_page.dart';
 /// - 深蓝头部：圆形头像 + 白色粗体用户名 + 半透明 ID 行
 /// - 金色渐变 VIP 卡片（皇冠图标 + 等级文字）
 /// - 存储区：蓝色粗进度条 + "已用 X / 总量 Y" 一行灰字
-/// - 图标菜单列表（星标/最近/AppID/关于）+ 退出登录
+/// - 图标菜单列表（设置/关于；下载入口在主页顶栏）+ 退出登录
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key, this.embedded = true});
 
@@ -276,24 +275,10 @@ class _ProfilePageState extends State<ProfilePage>
   String _fmt(String serverText, int bytes) =>
       serverText.isNotEmpty ? serverText : formatBytes(bytes);
 
-  /// 图标菜单列表（下载 + 设置 + 关于）
+  /// 图标菜单列表（设置 + 关于；下载已移至主页顶栏图标）
   Widget _menuSection(UserInfo u) {
     return Column(
       children: [
-        Divider(height: 1, color: AppTheme.divider),
-        _menuItem(
-          icon: Icons.cloud_download_outlined,
-          iconColor: AppTheme.primary,
-          title: '下载',
-          subtitle: '磁力链接离线下载进度',
-          onTap: () {
-            // 先收抽屉再进任务页
-            Navigator.of(context).pop();
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const TransferPage()),
-            );
-          },
-        ),
         Divider(height: 1, color: AppTheme.divider),
         _menuItem(
           icon: Icons.settings_outlined,

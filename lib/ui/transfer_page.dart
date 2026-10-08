@@ -96,7 +96,7 @@ class _TransferPageState extends State<TransferPage> {
     final active = _tasks.any((t) => t.status == 0 || t.status == 1);
     if (active && _pollTimer == null) {
       _pollTimer =
-          Timer.periodic(const Duration(seconds: 1), (_) => _pollTick());
+          Timer.periodic(const Duration(milliseconds: 500), (_) => _pollTick());
     } else if (!active && _pollTimer != null) {
       _pollTimer!.cancel();
       _pollTimer = null;
@@ -150,12 +150,6 @@ class _TransferPageState extends State<TransferPage> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text('云下载'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loading ? null : () => _load(reset: true),
-          ),
-        ],
       ),
       body: _body(),
     );
@@ -197,18 +191,16 @@ class _TransferPageState extends State<TransferPage> {
     }
     return RefreshIndicator(
       onRefresh: () => _load(reset: true),
-      child: ListView.separated(
+      child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         itemCount: 1 + _shown.length + (_hasMore ? 1 : 0),
-        separatorBuilder: (_, __) => Divider(
-            height: 1, color: AppTheme.divider, indent: 56),
         itemBuilder: (_, i) {
           // 第 0 项：任务总数摘要；其后为任务；最后一项为"加载更多"
           if (i == 0) {
             return Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: Text(
-                  '共 $_count 个任务 · 显示 ${_shown.length} 条 · 第 $_page/$_pageCount 页',
+                  '共 $_count 个任务 · 第 $_page/$_pageCount 页',
                   style: TextStyle(
                       fontSize: 12, color: AppTheme.textSecondary)),
             );

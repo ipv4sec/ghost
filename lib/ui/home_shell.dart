@@ -59,6 +59,7 @@ class _HomeShellState extends State<HomeShell> {
       backgroundColor: Colors.white,
       body: FilesPage(
         onOpenProfile: () => _scaffoldKey.currentState?.openDrawer(),
+        isHome: true,
       ),
       drawer: Drawer(
         backgroundColor: Colors.white,
