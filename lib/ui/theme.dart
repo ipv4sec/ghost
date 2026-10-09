@@ -67,7 +67,9 @@ class GhostPalette {
   final Color vipEnd;
 }
 
-/// 9 套主题，取自桌面 配色.png 的 9 张色卡（3×3，从左到右、从上到下）
+/// 12 套主题：前 9 套取自桌面 配色.png 的 9 张色卡（3×3，从左到右、
+/// 从上到下），第 10 套取自桌面 配色1.png 的 5 色色卡，第 11、12 套
+/// 为直接给出的 4 色配色
 const List<GhostPalette> ghostPalettes = [
   // 1 苔原：灰绿 + 棕
   GhostPalette(
@@ -294,6 +296,86 @@ const List<GhostPalette> ghostPalettes = [
     textSecondary: Color(0xFF958288),
     vipStart: Color(0xFFD8CFCA),
     vipEnd: Color(0xFFBFB0A9),
+  ),
+  // 10 粉彩：白 + 薄荷 + 薰衣草 + 金 + 近黑（桌面 配色1.png 的色卡）。
+  // 近黑作交互色与正文（白字对比约 16:1），薄荷作顶栏、薰衣草作
+  // 文件夹圆底；金较浅不配白字，落在 VIP 卡渐变深端（纯白作渐变
+  // 起点会在白底上隐形，故起点改用薄荷）
+  GhostPalette(
+    id: 10,
+    name: '粉彩',
+    swatches: [
+      Color(0xFFFFFFFF),
+      Color(0xFFC7F4C2),
+      Color(0xFFBFB5FF),
+      Color(0xFFFDDD8D),
+      Color(0xFF241F21),
+    ],
+    primary: Color(0xFF241F21),
+    accent: Color(0xFFBFB5FF),
+    onAccent: Color(0xFF241F21),
+    accentDeep: Color(0xFF241F21),
+    header: Color(0xFFC7F4C2),
+    onHeader: Color(0xFF241F21),
+    lightHeader: true,
+    scaffold: Color(0xFFFFFFFF),
+    divider: Color(0xFFE3F9E0),
+    textPrimary: Color(0xFF241F21),
+    textSecondary: Color(0xFF878485),
+    vipStart: Color(0xFFC7F4C2),
+    vipEnd: Color(0xFFFDDD8D),
+  ),
+  // 11 暮色：白 + 浅蓝 + 陶土 + 近黑（直接给出的 4 色配色）。近黑作
+  // 交互色与正文（白字对比约 18:1），陶土作顶栏（配近黑图标约 7.5:1）、
+  // 浅蓝作文件夹圆底；蓝、陶土又作 VIP 卡渐变两端（深字均可读）
+  GhostPalette(
+    id: 11,
+    name: '暮色',
+    swatches: [
+      Color(0xFFFBFBFB),
+      Color(0xFFAEC4E7),
+      Color(0xFFD7987D),
+      Color(0xFF161615),
+    ],
+    primary: Color(0xFF161615),
+    accent: Color(0xFFAEC4E7),
+    onAccent: Color(0xFF161615),
+    accentDeep: Color(0xFF161615),
+    header: Color(0xFFD7987D),
+    onHeader: Color(0xFF161615),
+    lightHeader: true,
+    scaffold: Color(0xFFFBFBFB),
+    divider: Color(0xFFD5C8CA),
+    textPrimary: Color(0xFF161615),
+    textSecondary: Color(0xFF958682),
+    vipStart: Color(0xFFAEC4E7),
+    vipEnd: Color(0xFFD7987D),
+  ),
+  // 12 晨雾：冷白 + 薰衣草 + 薄荷 + 灰黑（直接给出的 4 色配色）。
+  // 灰黑作交互色与正文（白字对比约 12:1）；薰衣草/薄荷原色近白，
+  // 顶栏与 VIP 卡渐变两端各压深少许避免与底色相融，圆底仍用原薄荷
+  GhostPalette(
+    id: 12,
+    name: '晨雾',
+    swatches: [
+      Color(0xFFF9F9FB),
+      Color(0xFFEFE9FF),
+      Color(0xFFE7F6DF),
+      Color(0xFF383838),
+    ],
+    primary: Color(0xFF383838),
+    accent: Color(0xFFE7F6DF),
+    onAccent: Color(0xFF383838),
+    accentDeep: Color(0xFF383838),
+    header: Color(0xFFDED9ED),
+    onHeader: Color(0xFF383838),
+    lightHeader: true,
+    scaffold: Color(0xFFF9F9FB),
+    divider: Color(0xFFEAE8F2),
+    textPrimary: Color(0xFF383838),
+    textSecondary: Color(0xFF8B8A94),
+    vipStart: Color(0xFFDED9ED),
+    vipEnd: Color(0xFFD7E5CF),
   ),
 ];
 

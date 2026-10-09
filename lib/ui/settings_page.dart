@@ -109,7 +109,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     fontWeight: FontWeight.w600,
                     color: AppTheme.textPrimary)),
           ),
-          // 9 套主题（配色.png 色卡）：色卡圆点预览 + 名称，点按切换
+          // 12 套主题（配色.png 9 张 + 配色1.png 1 张 + 直接给出的 4 色 2 张）：
+          // 圆点预览 + 名称，点按切换
           ...ghostPalettes.map(_themeRow),
           Divider(height: 1, color: AppTheme.divider),
           Padding(
