@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Surface
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -16,9 +17,11 @@ import kotlin.math.roundToInt
 // - 冷启动：onCreate 捕获，Dart 侧启动时通过 getInitialLink 拉取
 // - 热启动（singleTop 复用）：onNewIntent 实时回调 onMagnetLink
 //
-// 播放页手势通道（channel: ghost/player）：媒体音量 + 窗口亮度读写 + 方向解锁。
-// 亮度用 window attributes（仅本 Activity 生效，退出播放页恢复跟随系统）；
-// 音量走 AudioManager STREAM_MUSIC（系统级，与物理音量键一致）；
+// 播放页手势通道（channel: ghost/player）：媒体音量 + 窗口亮度读写 + 方向解锁 +
+// 播放常亮。亮度用 window attributes（仅本 Activity 生效，退出播放页恢复跟随
+// 系统）；音量走 AudioManager STREAM_MUSIC（系统级，与物理音量键一致）；
+// keepScreenOn 播放期间保持屏幕常亮（FLAG_KEEP_SCREEN_ON 仅本窗口生效，
+// 免权限，暂停/退出播放页时清除）；
 // resetOrientation 解除方向锁/退出播放页时恢复"跟随系统"方向
 class MainActivity : FlutterActivity() {
     private var initialLink: String? = null
@@ -115,6 +118,16 @@ class MainActivity : FlutterActivity() {
                         Surface.ROTATION_180 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
                         Surface.ROTATION_270 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
                         else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    }
+                    result.success(null)
+                }
+                "keepScreenOn" -> {
+                    // 播放期间屏幕常亮：只影响本窗口，不改系统设置、无需权限；
+                    // 暂停（系统超时可正常熄屏省电）与退出播放页时传 false 清除
+                    if (call.arguments as? Boolean ?: true) {
+                        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    } else {
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     }
                     result.success(null)
                 }

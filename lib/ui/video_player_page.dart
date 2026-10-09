@@ -20,6 +20,8 @@ import '../session.dart';
 /// - 手势（整屏生效，含视频外黑边区域）：屏幕左半边上下滑调亮度（最低 10%），
 ///   右半边上下滑调音量（可到静音），均 2% 步进、上滑调大；左右滑（任意
 ///   位置）快退/快进（5s 一档，单次手势累计最多 5 分钟）
+/// - 屏幕常亮：播放期间保持常亮（原生 FLAG_KEEP_SCREEN_ON），暂停时解除
+///   （系统超时后可正常熄屏省电），退出播放页时恢复
 /// - 覆盖控件：左上返回，右上倍速菜单（入口图标透明不可见）；底部一行 =
 ///   播放/暂停（左）· 细进度条（与按钮同中心线）· 方向锁（右下），3 秒
 ///   无操作自动隐藏。点按：屏幕中心（±20% 屏宽/高）= 播放/暂停，其余
@@ -86,6 +88,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     ]);
     _load();
     _readDeviceValues();
+    // 进入播放页即保持屏幕常亮（含加载阶段），暂停时解除
+    _invokeDevice('keepScreenOn', true);
   }
 
   @override
@@ -95,6 +99,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     _reportAndClose();
     _controller?.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    // 退出播放页解除屏幕常亮
+    _invokeDevice('keepScreenOn', false);
     // 退出播放页恢复跟随系统亮度
     _invokeDevice('resetBrightness');
     // 退出播放页恢复跟随系统方向（解除方向锁）
@@ -267,10 +273,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       _wasPlaying = playing;
       if (playing) {
         _scheduleHide(); // 恢复播放：继续 3 秒无操作自动隐藏
+        _invokeDevice('keepScreenOn', true); // 恢复常亮
       } else {
         // 暂停（按钮或外部事件）：取消在途隐藏计时，控件常驻
         _hideTimer?.cancel();
         setState(() => _controlsVisible = true);
+        // 解除常亮：暂停期间允许系统超时熄屏省电
+        _invokeDevice('keepScreenOn', false);
       }
     }
     setState(() {}); // 刷新进度条
