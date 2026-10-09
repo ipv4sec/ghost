@@ -702,31 +702,15 @@ class _FilesPageState extends State<FilesPage>
   /// FAB：新建文件夹对话框（FAB 已隐藏，恢复时取消注释 FAB 即可）
   // ignore: unused_element
   Future<void> _showAddFolderDialog() async {
-    final ctrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    final name = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('新建文件夹'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: '文件夹名称'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('创建'),
-          ),
-        ],
+      builder: (ctx) => const _TextInputDialog(
+        title: '新建文件夹',
+        hint: '文件夹名称',
+        confirmText: '创建',
       ),
     );
-    final name = ctrl.text.trim();
-    ctrl.dispose();
-    if (ok != true || name.isEmpty) return;
+    if (name == null || name.isEmpty) return;
     try {
       await _client.addFolder(pid: _dir.cid, name: name);
       if (mounted) {
@@ -892,31 +876,11 @@ class _FilesPageState extends State<FilesPage>
 
   /// 重命名：弹输入框，成功后整页刷新（排序/统计一并更新）
   Future<void> _renameItem(FileItem f) async {
-    final ctrl = TextEditingController(text: f.name);
-    final ok = await showDialog<bool>(
+    final name = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('重命名'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(isDense: true),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
+      builder: (ctx) => _TextInputDialog(title: '重命名', initial: f.name),
     );
-    final name = ctrl.text.trim();
-    ctrl.dispose();
-    if (ok != true || name.isEmpty || name == f.name) return;
+    if (name == null || name.isEmpty || name == f.name) return;
     try {
       await _client.ufileRename(f.fid, name);
       _reload();
@@ -1101,4 +1065,57 @@ class _ErrorView extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 单行文本输入对话框（重命名 / 新建文件夹共用）。
+/// 控制器由对话框自持：showDialog 的 future 在退出动画开始前就完成，
+/// 此时 TextField 仍在树上，调用方若立刻 dispose 控制器会触发
+/// "used after being disposed" 断言；改由本 State 在真正卸载时释放。
+/// 取消返回 null；确定返回去除首尾空白后的文本。
+class _TextInputDialog extends StatefulWidget {
+  const _TextInputDialog({
+    required this.title,
+    this.initial = '',
+    this.hint,
+    this.confirmText = '确定',
+  });
+
+  final String title;
+  final String initial;
+  final String? hint;
+  final String confirmText;
+
+  @override
+  State<_TextInputDialog> createState() => _TextInputDialogState();
+}
+
+class _TextInputDialogState extends State<_TextInputDialog> {
+  late final TextEditingController _ctrl =
+      TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text(widget.title),
+        content: TextField(
+          controller: _ctrl,
+          autofocus: true,
+          decoration: InputDecoration(isDense: true, hintText: widget.hint),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(_ctrl.text.trim()),
+            child: Text(widget.confirmText),
+          ),
+        ],
+      );
 }
