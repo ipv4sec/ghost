@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -86,6 +87,10 @@ class _FilesPageState extends State<FilesPage>
   Timer? _exitHintTimer;
   OverlayEntry? _exitHint;
 
+  /// 屏蔽词快照：Session 通知来源很多（token 刷新/AppID…），
+  /// 仅屏蔽词实际变化才重拉列表
+  List<String> _blockSnapshot = const [];
+
   @override
   bool get wantKeepAlive => true;
 
@@ -95,15 +100,28 @@ class _FilesPageState extends State<FilesPage>
     _stack = [
       widget.initialDir ?? DirEntry(cid: '0', name: '全部文件')
     ];
+    _blockSnapshot = Session.instance.blocklist;
+    Session.instance.addListener(_onSessionChanged);
     _restorePrefs();
     _reload();
   }
 
   @override
   void dispose() {
+    Session.instance.removeListener(_onSessionChanged);
     _exitHintTimer?.cancel();
     _exitHint?.remove();
     super.dispose();
+  }
+
+  /// 屏蔽词变化 → 重拉当前目录（不能内存重滤：删词要把条目找回来，
+  /// 而 _items 已不含被滤掉的原始数据；_reload 自带合并去抖）
+  void _onSessionChanged() {
+    if (!mounted) return;
+    final cur = Session.instance.blocklist;
+    if (listEquals(cur, _blockSnapshot)) return;
+    _blockSnapshot = cur;
+    _reload();
   }
 
   Future<void> _restorePrefs() async {
@@ -187,7 +205,7 @@ class _FilesPageState extends State<FilesPage>
       final raw = (j['data'] as List)
           .map((e) => FileItem.fromListJson((e as Map).cast<String, dynamic>()))
           .toList();
-      final list = _filterBySize(raw);
+      final list = _filterByName(_filterBySize(raw));
       setState(() {
         _items
           ..clear()
@@ -241,6 +259,15 @@ class _FilesPageState extends State<FilesPage>
         .toList();
   }
 
+  /// 屏蔽词过滤：名字包含任一屏蔽词（大小写不敏感）的不显示。
+  /// 注意实时读 Session——reload 合并去抖会丢弃监听器触发的重拉，
+  /// 在途请求的过期结果必须用最新屏蔽词过滤（绝不能缓存屏蔽词副本）
+  List<FileItem> _filterByName(List<FileItem> src) {
+    final s = Session.instance;
+    if (s.blocklist.isEmpty) return src;
+    return src.where((f) => !s.isNameBlocked(f.name)).toList();
+  }
+
   /// 剔除空文件夹：逐个串行查详情，count+folder_count 均 0 视为空，直接隐藏。
   /// 结果按 fid 缓存（重复刷新零请求）；被新一轮刷新取代（gen 过期）立即中止。
   Future<List<FileItem>> _hideEmptyDirs(List<FileItem> src, int gen) async {
@@ -290,7 +317,7 @@ class _FilesPageState extends State<FilesPage>
       final raw = (j['data'] as List)
           .map((e) => FileItem.fromListJson((e as Map).cast<String, dynamic>()))
           .toList();
-      final list = _filterBySize(raw);
+      final list = _filterByName(_filterBySize(raw));
       // 刷新已重置列表：丢弃过期分页结果
       if (!mounted || gen != _reloadGen) return;
       // 按 fid 去重：别处删除文件会使页边界位移，下一页可能重复上一页尾部
@@ -525,13 +552,20 @@ class _FilesPageState extends State<FilesPage>
       return _ErrorView(message: _error!, onRetry: _reload);
     }
     if (_items.isEmpty) {
+      // 整页被本地过滤（大小/屏蔽词）：继续向后翻页直到出现可见项或到底，
+      // 否则永远停在空态（_maybeLoadMore 只由列表 footer 触发，空列表没有 footer）
+      if (_offset < _count) {
+        _maybeLoadMore(); // 内部 post-frame 回调，build 安全
+        return const Center(child: CircularProgressIndicator());
+      }
+      final blocked = Session.instance.blocklist.isNotEmpty;
       return ListView(
         children: [
           const SizedBox(height: 120),
           Icon(Icons.folder_open, size: 64, color: AppTheme.textSecondary),
           const SizedBox(height: 12),
           Center(
-              child: Text('这个文件夹空空如也',
+              child: Text(blocked ? '没有可显示的文件（部分内容可能被屏蔽词过滤）' : '这个文件夹空空如也',
                   style: TextStyle(color: AppTheme.textSecondary))),
         ],
       );

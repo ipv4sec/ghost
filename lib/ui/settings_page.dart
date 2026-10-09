@@ -13,16 +13,20 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   late final TextEditingController _ctrl;
+  late final TextEditingController _blockCtrl;
 
   @override
   void initState() {
     super.initState();
     _ctrl = TextEditingController(text: Session.instance.userAppId);
+    _blockCtrl =
+        TextEditingController(text: Session.instance.blocklist.join('\n'));
   }
 
   @override
   void dispose() {
     _ctrl.dispose();
+    _blockCtrl.dispose();
     super.dispose();
   }
 
@@ -35,6 +39,18 @@ class _SettingsPageState extends State<SettingsPage> {
           content: Text(_ctrl.text.trim().isEmpty
               ? '已恢复内置 AppID'
               : '已保存，下次扫码登录时生效')),
+    );
+  }
+
+  Future<void> _saveBlocklist() async {
+    final words = Session.parseBlocklistInput(_blockCtrl.text);
+    await Session.instance.setBlocklist(words);
+    if (!mounted) return;
+    setState(() {}); // 刷新"当前生效"计数
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text(
+              words.isEmpty ? '已清空屏蔽词' : '已保存 ${words.length} 个屏蔽词')),
     );
   }
 
@@ -151,6 +167,65 @@ class _SettingsPageState extends State<SettingsPage> {
             child: Text(
               'AppID 即 115 开放平台 client_id，仅保存在本机；'
               '修改后重新扫码登录时使用。',
+              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+            ),
+          ),
+          Divider(height: 1, color: AppTheme.divider),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text('屏蔽词',
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary)),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TextField(
+              controller: _blockCtrl,
+              minLines: 3,
+              maxLines: 6,
+              decoration: const InputDecoration(
+                hintText: '每行一个，也可用逗号分隔',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Row(
+              children: [
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                      backgroundColor: AppTheme.primary),
+                  onPressed: _saveBlocklist,
+                  child: const Text('保存'),
+                ),
+                const SizedBox(width: 12),
+                TextButton(
+                  onPressed: () {
+                    _blockCtrl.clear();
+                    _saveBlocklist();
+                  },
+                  child: const Text('清空'),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Text(
+              '当前生效：${s.blocklist.length} 个屏蔽词',
+              style:
+                  TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              '名字包含任一屏蔽词的文件/文件夹不再显示'
+              '（文件列表与搜索结果，大小写不敏感）；仅保存在本机。',
               style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
             ),
           ),

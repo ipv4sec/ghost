@@ -39,6 +39,9 @@ class _SearchPageState extends State<SearchPage> {
   String? _error;
   bool _searched = false;
 
+  /// 搜索有结果但全被屏蔽词滤掉（空态文案区分用）
+  bool _allBlocked = false;
+
   _SearchFilter _filter = _SearchFilter.all;
   List<String> _history = [];
 
@@ -88,6 +91,7 @@ class _SearchPageState extends State<SearchPage> {
         _results.clear();
         _searched = false;
         _error = null;
+        _allBlocked = false;
       });
       return;
     }
@@ -106,10 +110,15 @@ class _SearchPageState extends State<SearchPage> {
       final j = await Session.instance.client.search(kw, limit: 100);
       if (!mounted) return;
       setState(() {
-        _results = (j['data'] as List)
+        final raw = (j['data'] as List)
             .map((e) =>
                 FileItem.fromSearchJson((e as Map).cast<String, dynamic>()))
             .toList();
+        // 赋值时过滤（而非 _filtered getter）：空态靠 _results.isEmpty
+        // 区分「未找到」与「类型筛选无结果」，getter 里滤会混淆两者
+        _results =
+            raw.where((f) => !Session.instance.isNameBlocked(f.name)).toList();
+        _allBlocked = _results.isEmpty && raw.isNotEmpty;
         _loading = false;
         _searched = true;
       });
@@ -219,6 +228,7 @@ class _SearchPageState extends State<SearchPage> {
                                 _results.clear();
                                 _searched = false;
                                 _error = null;
+                                _allBlocked = false;
                               });
                               _focus.requestFocus();
                             },
@@ -312,7 +322,9 @@ class _SearchPageState extends State<SearchPage> {
             Text(
               hasRaw
                   ? '当前筛选类型下无结果'
-                  : '未找到"${_controller.text.trim()}"相关文件',
+                  : _allBlocked
+                      ? '相关结果均被屏蔽词过滤'
+                      : '未找到"${_controller.text.trim()}"相关文件',
               style: TextStyle(color: AppTheme.textSecondary),
             ),
           ],

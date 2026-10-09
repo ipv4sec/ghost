@@ -16,6 +16,7 @@ class Session extends ChangeNotifier {
 
   static const _kToken = 'ghost.token';
   static const _kAppId = 'ghost.app_id';
+  static const _kBlocklist = 'ghost.blocklist';
 
   SharedPreferences? _prefs;
   Open115Client? _clientImpl;
@@ -24,6 +25,10 @@ class Session extends ChangeNotifier {
 
   TokenBundle? _token;
   bool _ready = false;
+
+  /// 屏蔽词（展示形式，保留输入大小写）；另存小写副本供匹配
+  List<String> _blocklist = const [];
+  List<String> _blockLower = const [];
 
   TokenBundle? get token => _token;
   bool get loggedIn => _token != null;
@@ -58,6 +63,7 @@ class Session extends ChangeNotifier {
         await _prefs!.remove(_kToken);
       }
     }
+    _applyBlocklist(_prefs!.getStringList(_kBlocklist) ?? const []);
     _ready = true;
     notifyListeners();
   }
@@ -66,6 +72,44 @@ class Session extends ChangeNotifier {
   Future<void> setUserAppId(String v) async {
     await _prefs!.setString(_kAppId, v.trim());
     notifyListeners();
+  }
+
+  /// 名字屏蔽词（名字包含任一词即不显示，大小写不敏感）
+  List<String> get blocklist => List.unmodifiable(_blocklist);
+
+  /// 名字是否命中屏蔽词（包含匹配，大小写不敏感）
+  bool isNameBlocked(String name) => nameBlocked(name, _blockLower);
+
+  /// 设置屏蔽词（规范化：trim、去空、忽略大小写去重）
+  Future<void> setBlocklist(List<String> words) async {
+    _applyBlocklist(words);
+    await _prefs!.setStringList(_kBlocklist, _blocklist);
+    notifyListeners();
+  }
+
+  void _applyBlocklist(List<String> words) {
+    _blocklist = _normalize(words);
+    _blockLower = [for (final w in _blocklist) w.toLowerCase()];
+  }
+
+  static List<String> _normalize(Iterable<String> raw) {
+    final seen = <String>{};
+    return [
+      for (final w in raw)
+        if (w.trim().isNotEmpty && seen.add(w.trim().toLowerCase())) w.trim(),
+    ];
+  }
+
+  /// 解析设置页输入：按换行与逗号（中英文）切分，去空白/空项，忽略大小写去重
+  static List<String> parseBlocklistInput(String raw) =>
+      _normalize(raw.split(RegExp(r'[\r\n,，]')));
+
+  /// 纯匹配函数（[lowerWords] 须为小写；空列表永不命中）。
+  /// w.isNotEmpty 双重防护：空字符串 contains('') 恒真，会屏蔽一切
+  static bool nameBlocked(String name, List<String> lowerWords) {
+    if (lowerWords.isEmpty) return false;
+    final n = name.toLowerCase();
+    return lowerWords.any((w) => w.isNotEmpty && n.contains(w));
   }
 
   Future<void> saveToken(TokenBundle t) async {
