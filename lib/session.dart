@@ -17,6 +17,10 @@ class Session extends ChangeNotifier {
   static const _kToken = 'ghost.token';
   static const _kAppId = 'ghost.app_id';
   static const _kBlocklist = 'ghost.blocklist';
+  static const _kSort = 'ghost.sort';
+
+  /// 合法排序字段（设置页排序区块与持久化解析共用）
+  static const sortFields = {'file_name', 'file_size', 'user_ptime', 'user_utime'};
 
   SharedPreferences? _prefs;
   Open115Client? _clientImpl;
@@ -29,6 +33,11 @@ class Session extends ChangeNotifier {
   /// 屏蔽词（展示形式，保留输入大小写）；另存小写副本供匹配
   List<String> _blocklist = const [];
   List<String> _blockLower = const [];
+
+  /// 文件列表排序（原文件页顶栏三个点菜单迁至设置页）：
+  /// 全局生效并持久化，文件页监听变化即时重拉
+  String _orderField = 'user_ptime';
+  bool _orderAsc = false;
 
   TokenBundle? get token => _token;
   bool get loggedIn => _token != null;
@@ -64,6 +73,7 @@ class Session extends ChangeNotifier {
       }
     }
     _applyBlocklist(_prefs!.getStringList(_kBlocklist) ?? const []);
+    _applySort(_prefs!.getString(_kSort));
     _ready = true;
     notifyListeners();
   }
@@ -110,6 +120,30 @@ class Session extends ChangeNotifier {
     if (lowerWords.isEmpty) return false;
     final n = name.toLowerCase();
     return lowerWords.any((w) => w.isNotEmpty && n.contains(w));
+  }
+
+  String get orderField => _orderField;
+  bool get orderAsc => _orderAsc;
+
+  /// 排序快照键（字段|方向），文件页据此判断排序是否变化
+  String get sortKey => '$_orderField|$_orderAsc';
+
+  /// 设置列表排序（文件页监听通知即时重拉）
+  Future<void> setSort(String field, bool asc) async {
+    if (!sortFields.contains(field)) return;
+    _orderField = field;
+    _orderAsc = asc;
+    await _prefs!.setString(_kSort, '$field|${asc ? '1' : '0'}');
+    notifyListeners();
+  }
+
+  void _applySort(String? raw) {
+    // '字段|0/1'；字段非法回默认（按上传时间降序）
+    final parts = (raw ?? '').split('|');
+    if (parts.length == 2 && sortFields.contains(parts[0])) {
+      _orderField = parts[0];
+      _orderAsc = parts[1] == '1';
+    }
   }
 
   Future<void> saveToken(TokenBundle t) async {

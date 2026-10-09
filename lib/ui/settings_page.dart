@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../session.dart';
 import '../ui/theme.dart';
 
-/// 设置页：主题选择 + AppID 本地覆盖（留空 = 使用内置）
+/// 设置页：主题选择 + AppID 本地覆盖（留空 = 使用内置）/ 屏蔽词
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 

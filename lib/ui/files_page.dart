@@ -75,21 +75,22 @@ class _FilesPageState extends State<FilesPage>
   final Set<String> _removingIds = {};
 
   bool _gridView = false;
-  String _order = 'user_ptime';
-  bool _asc = false;
 
   // 剪贴板：剪切中的文件（fid + 名字），非空时列表上方显示粘贴栏
   String? _cutFid;
   String? _cutName;
 
-  // 根目录"再划一次退出"：上次返回手势时间 + 居中提示的自动清理
+  // 根目录"再划一次退出"：上次返回手势时间 + 底部提示的自动清理
   DateTime? _lastBackAt;
-  Timer? _exitHintTimer;
-  OverlayEntry? _exitHint;
+  Timer? _exitToastTimer;
+  OverlayEntry? _exitToast;
 
   /// 屏蔽词快照：Session 通知来源很多（token 刷新/AppID…），
   /// 仅屏蔽词实际变化才重拉列表
   List<String> _blockSnapshot = const [];
+
+  /// 排序快照（同屏蔽词快照）：设置页改排序后即时重拉
+  String _sortSnapshot = '';
 
   @override
   bool get wantKeepAlive => true;
@@ -101,6 +102,7 @@ class _FilesPageState extends State<FilesPage>
       widget.initialDir ?? DirEntry(cid: '0', name: '全部文件')
     ];
     _blockSnapshot = Session.instance.blocklist;
+    _sortSnapshot = Session.instance.sortKey;
     Session.instance.addListener(_onSessionChanged);
     _restorePrefs();
     _reload();
@@ -109,18 +111,21 @@ class _FilesPageState extends State<FilesPage>
   @override
   void dispose() {
     Session.instance.removeListener(_onSessionChanged);
-    _exitHintTimer?.cancel();
-    _exitHint?.remove();
+    _exitToastTimer?.cancel();
+    _exitToast?.remove();
     super.dispose();
   }
 
-  /// 屏蔽词变化 → 重拉当前目录（不能内存重滤：删词要把条目找回来，
-  /// 而 _items 已不含被滤掉的原始数据；_reload 自带合并去抖）
+  /// 屏蔽词/排序变化 → 重拉当前目录（屏蔽词不能内存重滤：删词要把
+  /// 条目找回来，而 _items 已不含被滤掉的原始数据；_reload 自带合并去抖）
   void _onSessionChanged() {
     if (!mounted) return;
-    final cur = Session.instance.blocklist;
-    if (listEquals(cur, _blockSnapshot)) return;
-    _blockSnapshot = cur;
+    final s = Session.instance;
+    final blockChanged = !listEquals(s.blocklist, _blockSnapshot);
+    final sortChanged = s.sortKey != _sortSnapshot;
+    if (!blockChanged && !sortChanged) return;
+    _blockSnapshot = s.blocklist;
+    _sortSnapshot = s.sortKey;
     _reload();
   }
 
@@ -138,11 +143,13 @@ class _FilesPageState extends State<FilesPage>
     await p.setBool('ghost.grid', _gridView);
   }
 
-  /// 屏幕正中"再划一次退出此应用"提示：不拦截点击，2 秒后自动消失
+  /// 屏幕正中 toast"再划一次退出此应用"：自绘小灰泡（无应用图标，
+  /// 底部不放——下方紧挨系统手势条，视觉上像多了两道线且无法去除），
+  /// 2 秒后自动消失，不拦截点击
   void _showExitHint() {
-    _exitHintTimer?.cancel();
-    _exitHint?.remove();
-    _exitHint = OverlayEntry(
+    _exitToastTimer?.cancel();
+    _exitToast?.remove();
+    _exitToast = OverlayEntry(
       builder: (_) => IgnorePointer(
         child: Center(
           child: Container(
@@ -159,10 +166,10 @@ class _FilesPageState extends State<FilesPage>
         ),
       ),
     );
-    Overlay.of(context).insert(_exitHint!);
-    _exitHintTimer = Timer(const Duration(seconds: 2), () {
-      _exitHint?.remove();
-      _exitHint = null;
+    Overlay.of(context).insert(_exitToast!);
+    _exitToastTimer = Timer(const Duration(seconds: 2), () {
+      _exitToast?.remove();
+      _exitToast = null;
     });
   }
 
@@ -181,7 +188,7 @@ class _FilesPageState extends State<FilesPage>
 
   Future<void> _reload() async {
     // 同一目录/排序的刷新进行中：合并本次触发，避免叠加请求触发限流（405）
-    final key = '${_dir.cid}|$_order|$_asc';
+    final key = '${_dir.cid}|${Session.instance.sortKey}';
     if (_reloading && key == _loadingKey) return;
     _reloading = true;
     _loadingKey = key;
@@ -198,8 +205,8 @@ class _FilesPageState extends State<FilesPage>
         cid: _dir.cid,
         limit: _limit,
         offset: 0,
-        order: _order,
-        asc: _asc,
+        order: Session.instance.orderField,
+        asc: Session.instance.orderAsc,
       );
       if (!mounted || gen != _reloadGen) return;
       final raw = (j['data'] as List)
@@ -311,8 +318,8 @@ class _FilesPageState extends State<FilesPage>
         cid: _dir.cid,
         limit: _limit,
         offset: _offset,
-        order: _order,
-        asc: _asc,
+        order: Session.instance.orderField,
+        asc: Session.instance.orderAsc,
       );
       final raw = (j['data'] as List)
           .map((e) => FileItem.fromListJson((e as Map).cast<String, dynamic>()))
@@ -424,7 +431,8 @@ class _FilesPageState extends State<FilesPage>
     );
   }
 
-  /// 整块象牙顶栏（app 名行；路径行 + 统计行暂时隐藏，恢复时取消注释）
+  /// 整块象牙顶栏（单击进云下载页、双击进搜索页，右上角三个点排序；
+  /// 路径行 + 统计行暂时隐藏，恢复时取消注释）
   Widget _header() {
     // final folders = _items.where((e) => e.isDir).length;
     // final files = _items.length - folders;
@@ -438,59 +446,63 @@ class _FilesPageState extends State<FilesPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 第一行：汉堡 + 标题 + 右侧图标组（路径/统计行隐藏后行高
-            // 52→64：48 的图标按钮留出上下各 8 的余量，单独成行不显挤）
-            SizedBox(
-              height: 64,
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.menu, color: AppTheme.textPrimary),
-                    tooltip: '菜单',
-                    onPressed: widget.onOpenProfile,
-                  ),
-                  const Expanded(child: SizedBox()),
-                  IconButton(
-                    icon: Icon(Icons.search, color: AppTheme.textPrimary),
-                    tooltip: '搜索',
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const SearchPage()),
+            // 第一行：汉堡 + 整条点按手势（单击云下载/双击搜索）+
+            // 右上角三个点排序。行高 64：48 的图标按钮留出上下各 8 的
+            // 余量，单独成行不显挤；汉堡/三个点自身的手势在内层，
+            // 点它们不触发整条手势
+            GestureDetector(
+              // opaque：整行（含空白处）都可点
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const TransferPage()),
+              ),
+              onDoubleTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SearchPage()),
+              ),
+              child: SizedBox(
+                height: 64,
+                child: Row(
+                  children: [
+                    // 左缘 8：汉堡图标中心 (8+24) 与列表行文件图标中心
+                    // (12+20) 落在同一竖线上
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: IconButton(
+                        icon: Icon(Icons.menu, color: AppTheme.textPrimary),
+                        tooltip: '菜单',
+                        onPressed: widget.onOpenProfile,
+                      ),
                     ),
-                  ),
-                  // 下载入口（原个人信息抽屉菜单项，改为顶栏图标）
-                  IconButton(
-                    icon: Icon(Icons.cloud_download_outlined,
-                        color: AppTheme.textPrimary),
-                    tooltip: '下载',
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const TransferPage()),
+                    const Expanded(child: SizedBox()),
+                    // 排序菜单（三个点）：经 Session 全局生效并记住选择，
+                    // 文件页监听变化即时重拉
+                    PopupMenuButton<String>(
+                      tooltip: '排序',
+                      icon: Icon(Icons.more_vert,
+                          color: AppTheme.textPrimary),
+                      color: Colors.white,
+                      shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.zero),
+                      onSelected: (v) {
+                        if (v.startsWith('order:')) {
+                          final field = v.substring(6);
+                          // 点当前字段 = 切换升/降序；换字段保持当前方向
+                          Session.instance.setSort(
+                              field,
+                              field == Session.instance.orderField
+                                  ? !Session.instance.orderAsc
+                                  : Session.instance.orderAsc);
+                        }
+                      },
+                      itemBuilder: (_) => [
+                        _orderItem('file_name', '按名称'),
+                        _orderItem('file_size', '按大小'),
+                        _orderItem('user_ptime', '按上传时间'),
+                        _orderItem('user_utime', '按修改时间'),
+                      ],
                     ),
-                  ),
-                  PopupMenuButton<String>(
-                    tooltip: '更多',
-                    icon: Icon(Icons.more_vert,
-                        color: AppTheme.textPrimary),
-                    color: Colors.white,
-                    shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.zero),
-                    onSelected: (v) {
-                      if (v.startsWith('order:')) {
-                        final parts = v.split(':');
-                        setState(() {
-                          _order = parts[1];
-                          _asc = parts[2] == '1';
-                        });
-                        _reload();
-                      }
-                    },
-                    itemBuilder: (_) => [
-                      _orderItem('file_name', '按名称'),
-                      _orderItem('file_size', '按大小'),
-                      _orderItem('user_ptime', '按上传时间'),
-                      _orderItem('user_utime', '按修改时间'),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             // 第二行：路径（无水波纹点击效果；点按仍返回上级）——暂时隐藏
@@ -515,8 +527,7 @@ class _FilesPageState extends State<FilesPage>
             //     style: const TextStyle(color: Colors.white70, fontSize: 12),
             //   ),
             // ),
-            // 不再额外垫底部间距：图标行在 64 高度内居中，
-            // 搜索图标上方/下方的留白保持一致
+            // 不额外垫底部间距：图标行在 64 高度内居中，上下留白一致
           ],
         ),
       ),
@@ -524,9 +535,9 @@ class _FilesPageState extends State<FilesPage>
   }
 
   PopupMenuItem<String> _orderItem(String field, String label) {
-    final selected = _order == field;
+    final selected = Session.instance.orderField == field;
     return PopupMenuItem(
-      value: 'order:$field:${_asc ? '0' : '1'}',
+      value: 'order:$field',
       child: Row(
         // 菜单宽度被 SDK 固定为 56 的倍数(此菜单=168lp)，行内容整体居中：
         // 内容自身左右对称(前导 18+8=26，尾随 26)，居中后文字两侧留白相等
