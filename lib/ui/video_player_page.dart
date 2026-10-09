@@ -56,9 +56,38 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   Timer? _hideTimer;
   int _resumeSec = 0;
 
-  /// 上一 tick 的播放态：检测 播放→暂停（含系统音频焦点丢失等外部暂停）
-  /// 与 暂停→播放 的切换，暂停期间控件常驻显示
+  /// 对外呈现的播放态：播放按钮/播放暂停切换统一读它，不直接读底层
+  /// isPlaying——底层 buffering（seek 后/加载中/网络波动）会短暂上报
+  /// false，须延迟确认（_pauseConfirm）后才置 false；用户点按钮则
+  /// 立即切换。暂停期间控件常驻显示
   bool _wasPlaying = true;
+
+  /// 正在点按/拖动进度条或整屏横滑 seek。底层 seek 后会短暂 buffering
+  /// （isPlaying=false，网络流上可持续约 1 秒），此间播放态冻结为
+  /// 调整前的值，避免播放按钮闪成暂停态、常亮被误解除；
+  /// 底层恢复播放（_onTick 检测到）或 4 秒兜底计时后解除
+  bool _scrubbing = false;
+
+  /// 进度条拖动进行中：seek 手势活跃期间不解除冻结
+  bool _barDrag = false;
+  Timer? _scrubTimer;
+
+  /// 有 seek 手势正在进行（进度条拖动或整屏横滑）
+  bool get _scrubGestureActive =>
+      _barDrag || _gestureKind == _GestureKind.seek;
+
+  /// "待确认暂停"进行中（已armed计时，避免每个 false tick 反复重启计时，
+  /// 否则底层周期 tick 会让确认永远走不完）
+  bool _pausePending = false;
+
+  /// 底层真正开始播放过（见过 isPlaying=true）。play() 返回≠已起播，
+  /// 起播前的 buffering 不参与暂停确认（此时视频即将播放，按钮应保持
+  /// 播放态，否则起播慢于 1.2 秒会闪一下暂停态）
+  bool _everPlayed = false;
+
+  /// "待确认暂停"计时：isPlaying=false 多为 buffering（seek 后/加载中/
+  /// 网络波动，通常 1 秒内恢复），延迟确认，期间按钮保持播放态
+  Timer? _pauseConfirm;
 
   /// 右下角方向锁：默认锁定（进入时强制双横屏）；解锁后完全跟随传感器
   /// （手机竖过来 = 竖屏播放）；再点锁定 = 固定当前方向（横锁横、竖锁竖）
@@ -96,6 +125,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   void dispose() {
     _hideTimer?.cancel();
     _gestureTimer?.cancel();
+    _scrubTimer?.cancel();
+    _pauseConfirm?.cancel();
     _reportAndClose();
     _controller?.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -268,19 +299,39 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   void _onTick() {
     if (!mounted) return;
-    final playing = _controller?.value.isPlaying ?? _wasPlaying;
-    if (playing != _wasPlaying) {
-      _wasPlaying = playing;
-      if (playing) {
-        _scheduleHide(); // 恢复播放：继续 3 秒无操作自动隐藏
+    final raw = _controller?.value.isPlaying ?? false;
+    // seek 落地、底层恢复播放：解除冻结的播放态（手势进行中不解除，
+    // 拖动会连续触发 seek）
+    if (_scrubbing && !_scrubGestureActive && raw) {
+      _scrubTimer?.cancel();
+      _scrubbing = false;
+    }
+    if (raw) {
+      // 底层确认在播：撤销待确认的暂停
+      _pauseConfirm?.cancel();
+      _pausePending = false;
+      _everPlayed = true;
+      if (!_wasPlaying) {
+        // 确认恢复播放（外部暂停结束，如音频焦点回来）
+        _wasPlaying = true;
+        _scheduleHide(); // 恢复播放：继续无操作自动隐藏
         _invokeDevice('keepScreenOn', true); // 恢复常亮
-      } else {
-        // 暂停（按钮或外部事件）：取消在途隐藏计时，控件常驻
+      }
+    } else if (_wasPlaying && _everPlayed && !_scrubbing && !_pausePending) {
+      // isPlaying=false 多为 buffering（seek 后/网络波动，通常 1 秒内
+      // 恢复）：延迟确认暂停，期间播放按钮保持播放态。
+      // 起播前（未 _everPlayed）与 seek 冻结中不武装确认
+      _pausePending = true;
+      _pauseConfirm = Timer(const Duration(milliseconds: 1200), () {
+        _pausePending = false;
+        if (!mounted || _scrubbing) return;
+        if (_controller?.value.isPlaying ?? false) return;
+        // 确认暂停：控件常驻 + 解除常亮（暂停期间允许系统超时熄屏省电）
+        _wasPlaying = false;
         _hideTimer?.cancel();
         setState(() => _controlsVisible = true);
-        // 解除常亮：暂停期间允许系统超时熄屏省电
         _invokeDevice('keepScreenOn', false);
-      }
+      });
     }
     setState(() {}); // 刷新进度条
   }
@@ -293,6 +344,23 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       // 计时期间可能被外部暂停，触发时再校验一次
       if (mounted && (_controller?.value.isPlaying ?? false)) {
         setState(() => _controlsVisible = false);
+      }
+    });
+  }
+
+  /// 开始一次进度调整（点按/拖动进度条、整屏横滑）：冻结播放态
+  void _beginScrub() {
+    setState(() => _scrubbing = true);
+    _armScrubTimer();
+  }
+
+  /// 手势结束/点按后 seek 可能仍在 buffering：等底层恢复播放
+  /// （_onTick 检测）再解除冻结；4 秒兜底（暂停中 seek 不会恢复播放）
+  void _armScrubTimer() {
+    _scrubTimer?.cancel();
+    _scrubTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted && !_scrubGestureActive) {
+        setState(() => _scrubbing = false);
       }
     });
   }
@@ -356,6 +424,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     final c = _controller;
     if (c == null || !c.value.isInitialized) return;
     _gestureKind = _GestureKind.seek;
+    _beginScrub(); // 连续 seek 期间冻结播放态，手势结束等恢复播放再解除
     _gestureValue = 0;
     _seekStartMs = c.value.position.inMilliseconds;
     _seekSteps = 0;
@@ -381,6 +450,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   void _onGestureDragEnd() {
+    // seek 手势结束：可能仍在 buffering，等恢复播放再解除冻结
+    if (_scrubbing) _armScrubTimer();
     _gestureTimer?.cancel();
     _gestureTimer = Timer(const Duration(milliseconds: 800), () {
       if (mounted) setState(() => _gestureKind = null);
@@ -404,14 +475,23 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   Future<void> _togglePlay() async {
     final c = _controller;
     if (c == null) return;
-    if (c.value.isPlaying) {
+    if (_wasPlaying) {
+      // 用户主动暂停：立即切换（不等延迟确认），暂停侧效应同步施加
+      _wasPlaying = false;
+      _pauseConfirm?.cancel();
+      _pausePending = false;
+      _hideTimer?.cancel();
+      _invokeDevice('keepScreenOn', false); // 暂停期间允许系统超时熄屏省电
       await c.pause();
       await _report(watchEnd: false);
+      setState(() => _controlsVisible = true); // 暂停期间控件常驻
     } else {
+      _wasPlaying = true;
+      _invokeDevice('keepScreenOn', true);
       await c.play();
+      setState(() => _controlsVisible = true);
+      _scheduleHide();
     }
-    setState(() => _controlsVisible = true);
-    _scheduleHide();
   }
 
   Future<void> _report({required bool watchEnd}) async {
@@ -572,7 +652,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                   // 透明按钮：无圆形底，纯三角/双竖条图标
                   iconSize: 32,
                   icon: Icon(
-                    c.value.isPlaying ? Icons.pause : Icons.play_arrow,
+                    _wasPlaying ? Icons.pause : Icons.play_arrow,
                     color: Colors.white,
                   ),
                   onPressed: _togglePlay,
@@ -672,8 +752,32 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTapUp: (d) => seekTo(d.localPosition),
+        onTapUp: (d) {
+          // 点按 seek 后底层 buffering 可持续约 1 秒：冻结播放态，
+          // 待恢复播放（_onTick 检测）或 4 秒兜底计时后解除
+          _beginScrub();
+          seekTo(d.localPosition);
+        },
+        onHorizontalDragStart: (_) {
+          // 拖动期间连续 seek，底层反复进出 buffering：冻结播放态，
+          // 播放按钮保持拖动前的状态（视频本来就是播着的）。
+          // 同时防止 2 秒自动隐藏计时在中途把进度条藏掉
+          _barDrag = true;
+          _revealControls();
+          _beginScrub();
+        },
         onHorizontalDragUpdate: (d) => seekTo(d.localPosition),
+        onHorizontalDragEnd: (_) {
+          _barDrag = false;
+          // 拖完 seek 可能仍在 buffering：等恢复播放再解除冻结
+          _armScrubTimer();
+          // 拖完恢复控件自动隐藏计时
+          _scheduleHide();
+        },
+        onHorizontalDragCancel: () {
+          _barDrag = false;
+          _armScrubTimer();
+        },
         child: SizedBox(
           height: 24,
           child: Center(
