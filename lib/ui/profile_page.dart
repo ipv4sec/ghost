@@ -13,7 +13,7 @@ import 'settings_page.dart';
 /// - 深蓝头部：圆形头像 + 白色粗体用户名 + 半透明 ID 行
 /// - 金色渐变 VIP 卡片（皇冠图标 + 等级文字）
 /// - 存储区：蓝色粗进度条 + "已用 X / 总量 Y" 一行灰字
-/// - 图标菜单列表（设置/关于；下载入口在主页顶栏）+ 退出登录
+/// - 图标菜单列表（设置/关于；下载入口在主页顶栏），退出登录固定抽屉最底部
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key, this.embedded = true});
 
@@ -93,14 +93,22 @@ class _ProfilePageState extends State<ProfilePage>
       );
     }
     final u = _user!;
-    return ListView(
-      padding: EdgeInsets.zero,
+    // 退出登录不随内容滚动：列表占满剩余高度，按钮固定抽屉最底部
+    return Column(
       children: [
-        _header(u),
-        _vipCard(u),
-        _storageSection(u),
-        _menuSection(u),
-        _logoutButton(),
+        Expanded(
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              _header(u),
+              _vipCard(u),
+              _storageSection(u),
+              _menuSection(u),
+            ],
+          ),
+        ),
+        // 避让底部手势条/导航栏
+        SafeArea(top: false, child: _logoutButton()),
       ],
     );
   }
@@ -297,7 +305,7 @@ class _ProfilePageState extends State<ProfilePage>
           icon: Icons.info_outline,
           iconColor: AppTheme.textSecondary,
           title: '关于',
-          subtitle: 'v0.1 · 115 开放平台第三方客户端',
+          subtitle: '115 开放平台第三方客户端',
           onTap: () {
             Navigator.of(context).pop();
             Navigator.of(context).push(
@@ -341,8 +349,6 @@ class _ProfilePageState extends State<ProfilePage>
                 ],
               ),
             ),
-            Icon(Icons.chevron_right,
-                size: 20, color: AppTheme.textSecondary),
           ],
         ),
       ),
@@ -351,7 +357,7 @@ class _ProfilePageState extends State<ProfilePage>
 
   Widget _logoutButton() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       child: OutlinedButton(
         style: OutlinedButton.styleFrom(
           foregroundColor: const Color(0xFFF53F3F),
