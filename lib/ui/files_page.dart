@@ -385,9 +385,9 @@ class _FilesPageState extends State<FilesPage>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    // 顶栏浅色 → 深色状态栏图标；珊瑚/暗夜主题顶栏深，用浅色图标
+    // 顶栏浅色 → 深色状态栏图标，深色顶栏配浅色图标
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: AppTheme.current.lightHeader
+      value: AppTheme.lightHeader
           ? SystemUiOverlayStyle.dark
           : SystemUiOverlayStyle.light,
       child: PopScope(

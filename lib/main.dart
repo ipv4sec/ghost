@@ -28,7 +28,7 @@ class GhostApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
         home: KeyedSubtree(
-          key: ValueKey('theme-${AppTheme.current.id}'),
+          key: ValueKey('theme-${AppTheme.current.name}'),
           child: const AnnotatedRegion<SystemUiOverlayStyle>(
             // 启动页为浅底，状态栏图标用深色；深色页（播放页）自行标注覆盖
             value: SystemUiOverlayStyle.dark,

@@ -1,9 +1,11 @@
+import 'package:flex_color_scheme/flex_color_scheme.dart';
 import 'package:flutter/material.dart';
 
 import '../session.dart';
 import '../ui/theme.dart';
 
-/// 设置页：主题选择 + AppID 本地覆盖（留空 = 使用内置）/ 屏蔽词
+/// 设置页：主题配色（flex_color_scheme 内置方案，点击弹列表切换）+
+/// AppID 本地覆盖（留空 = 使用内置）/ 屏蔽词
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -54,41 +56,57 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  /// 主题选择行：色卡 5 圆点 + 名称，右侧选中勾
-  Widget _themeRow(GhostPalette p) {
-    final selected = p == AppTheme.current;
-    return InkWell(
-      onTap: () async {
-        await ThemeManager.instance.select(p);
-        if (mounted) setState(() {}); // 刷新选中勾（页面其余处随全局重建变色）
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          children: [
-            for (final c in p.swatches) ...[
-              Container(
-                width: 16,
-                height: 16,
-                decoration: BoxDecoration(
-                  color: c,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.black12),
-                ),
-              ),
-              const SizedBox(width: 4),
-            ],
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(p.name,
-                  style: TextStyle(fontSize: 16, color: AppTheme.textPrimary)),
-            ),
-            Icon(Icons.check,
-                size: 20,
-                color: selected ? AppTheme.primary : Colors.transparent),
-          ],
+  /// 主题配色选择弹窗（参考 varus）：方案名 + 4 色圆点预览 + 选中勾，
+  /// 点击切换主题（全局即时生效并持久化）
+  Future<void> _showSchemeDialog() async {
+    final tm = ThemeManager.instance;
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('主题配色'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: tm.schemes.length,
+            itemBuilder: (context, index) {
+              final scheme = tm.schemes[index];
+              final selected = scheme.name == AppTheme.current.name;
+              return ListTile(
+                dense: true,
+                title: Text(scheme.name),
+                subtitle: _schemeDots(scheme),
+                trailing: selected ? const Icon(Icons.check) : null,
+                onTap: () async {
+                  await tm.select(scheme);
+                  if (dialogContext.mounted) Navigator.pop(dialogContext);
+                },
+              );
+            },
+          ),
         ),
       ),
+    );
+  }
+
+  /// 方案预览圆点：primary / primaryContainer / secondary / secondaryContainer
+  Widget _schemeDots(FlexSchemeData scheme) {
+    final colors = [
+      scheme.light.primary,
+      scheme.light.primaryContainer,
+      scheme.light.secondary,
+      scheme.light.secondaryContainer,
+    ];
+    return Row(
+      children: [
+        for (final color in colors)
+          Container(
+            width: 14,
+            height: 14,
+            margin: const EdgeInsets.only(right: 4),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+      ],
     );
   }
 
@@ -101,17 +119,15 @@ class _SettingsPageState extends State<SettingsPage> {
       appBar: AppBar(title: const Text('设置')),
       body: ListView(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text('主题',
-                style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary)),
+          // 主题配色（flex_color_scheme 内置方案表）：点击弹列表选择，
+          // 切换后全局即时生效
+          ListTile(
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('主题配色'),
+            subtitle: Text(AppTheme.current.name),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _showSchemeDialog,
           ),
-          // 12 套主题（配色.png 9 张 + 配色1.png 1 张 + 直接给出的 4 色 2 张）：
-          // 圆点预览 + 名称，点按切换
-          ...ghostPalettes.map(_themeRow),
           Divider(height: 1, color: AppTheme.divider),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
