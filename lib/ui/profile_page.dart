@@ -11,7 +11,7 @@ import 'settings_page.dart';
 /// 用户信息（侧边抽屉内）
 ///
 /// - 主题色头部：圆形头像 + 粗体用户名 + 年度会员认证图标
-///   + 至臻会员到期时间 / 存储使用情况（方块点阵，行尾与到期行对齐）
+///   + 会员服务到期时间 / 存储使用情况（方块点阵，行尾与到期行对齐）
 /// - 图标菜单列表（设置/关于，图标 + 文字左对齐，间距与左缘留白
 ///   一致；下载入口在主页顶栏），退出行固定抽屉最底部
 class ProfilePage extends StatefulWidget {
@@ -117,7 +117,7 @@ class _ProfilePageState extends State<ProfilePage>
   /// 头部：头像 + 用户名 + 年度会员认证图标 + 到期时间/存储使用点阵
   /// （底色用主题顶栏色 header，文字用 onHeader，与主页顶栏一致）
   Widget _header(UserInfo u) {
-    final expiry = '至臻会员将于${fmtExpireCn(u.vipExpire)}到期';
+    final expiry = '会员服务将于${fmtExpireCn(u.vipExpire)}到期';
     final subStyle = TextStyle(
       color: AppTheme.onHeader.withOpacity(0.6),
       fontSize: 13, // 到期/点阵行整体调大一档（TODO），点阵宽随 textW 自适应
