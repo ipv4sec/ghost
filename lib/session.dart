@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 
+import 'package:cronet_http/cronet_http.dart' as cronet;
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
@@ -26,6 +29,25 @@ class Session extends ChangeNotifier {
   Open115Client? _clientImpl;
 
   Open115Client get client => _clientImpl!;
+
+  /// Android 上用 Cronet（Chromium 网络栈）发请求：
+  /// 115 的云盾 WAF 会把 Dart HTTP（dart:io）的 TLS 指纹识别为机器人，
+  /// 对扫码登录接口下发截断的假 uid/sign（导致扫码后永远无反应），
+  /// curl/浏览器/Cronet 等指纹则正常。Cronet 经 GMS 动态下发，
+  /// 不可用时退回 dart:io。
+  static http.Client _createHttpClient() {
+    if (Platform.isAndroid) {
+      try {
+        final engine = cronet.CronetEngine.build(
+          cacheMode: cronet.CacheMode.disabled,
+        );
+        return cronet.CronetClient.fromCronetEngine(engine, closeEngine: true);
+      } catch (e) {
+        debugPrint('Cronet 不可用，退回 dart:io: $e');
+      }
+    }
+    return http.Client();
+  }
 
   TokenBundle? _token;
   bool _ready = false;
@@ -56,6 +78,7 @@ class Session extends ChangeNotifier {
     if (_ready) return;
     _prefs = await SharedPreferences.getInstance();
     _clientImpl = Open115Client(
+      httpClient: _createHttpClient(),
       tokenLoader: () => _token,
       tokenSaver: (t) async {
         await _prefs!.setString(_kToken, jsonEncode(t.toJson()));

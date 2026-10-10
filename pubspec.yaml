@@ -50,6 +50,7 @@ dependencies:
   video_player: ^2.9.2
   # Material 2 风格主题（参考 varus）
   flex_color_scheme: ^8.1.1
+  cronet_http: ^1.10.0
 
 dev_dependencies:
   flutter_test:
