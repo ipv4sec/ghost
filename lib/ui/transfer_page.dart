@@ -181,7 +181,7 @@ class _TransferPageState extends State<TransferPage> {
             Icon(Icons.cloud_off_outlined, size: 64, color: AppTheme.textSecondary),
             const SizedBox(height: 12),
             Text('暂无云下载任务',
-                style: TextStyle(fontSize: 15, color: AppTheme.textSecondary)),
+                style: TextStyle(fontSize: 16, color: AppTheme.textSecondary)),
             const SizedBox(height: 8),
             Text('点击磁力链接即可添加到云下载',
                 style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),

@@ -188,6 +188,14 @@ class _LoginPageState extends State<LoginPage> {
         color: AppTheme.scaffold,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppTheme.divider),
+        // varus 风格阴影（M2 elevation 观感）
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
       child: body,
     );
@@ -202,6 +210,6 @@ class _LoginPageState extends State<LoginPage> {
       QrPhase.expired => ('二维码已失效', AppTheme.textSecondary),
       QrPhase.error => (_error.isEmpty ? '出错了' : _error, AppTheme.textSecondary),
     };
-    return Text(text, style: TextStyle(color: color, fontSize: 15));
+    return Text(text, style: TextStyle(color: color, fontSize: 16));
   }
 }

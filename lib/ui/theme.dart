@@ -1,3 +1,4 @@
+import 'package:flex_color_scheme/flex_color_scheme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -402,12 +403,19 @@ class AppTheme {
   static Color get vipEnd => current.vipEnd;
 
   static ThemeData light() {
-    final base = ThemeData.light(useMaterial3: true);
-    return base.copyWith(
-      colorScheme: base.colorScheme.copyWith(
-        primary: primary,
-        secondary: accent,
+    // 参考 varus：flex_color_scheme + Material 2 + Montserrat 字体
+    // （中文回退微软正黑体），配色沿用本应用的 12 套 GhostPalette；
+    // 顶栏 elevation 20 投影同 varus
+    return FlexThemeData.light(
+      fontFamily: 'Montserrat',
+      fontFamilyFallback: const ['微软正黑体'],
+      useMaterial3: false,
+      colors: FlexSchemeColor(
+        primary: current.primary,
+        secondary: current.accent,
+        error: current.accentDeep,
       ),
+    ).copyWith(
       scaffoldBackgroundColor: Colors.white,
       appBarTheme: AppBarTheme(
         backgroundColor: header,
@@ -416,11 +424,12 @@ class AppTheme {
         systemOverlayStyle: current.lightHeader
             ? SystemUiOverlayStyle.dark
             : SystemUiOverlayStyle.light,
-        elevation: 0,
+        // varus 风格：顶栏带投影
+        elevation: 20,
         centerTitle: false,
         titleTextStyle: TextStyle(
           color: onHeader,
-          fontSize: 18,
+          fontSize: 20, // varus 顶栏字号
           fontWeight: FontWeight.w500,
         ),
       ),
@@ -530,6 +539,36 @@ class FileLeadingIcon extends StatelessWidget {
       ),
       child: Icon(KindStyle.icon(item.kind),
           color: KindStyle.iconColor(item.kind), size: size * 0.5),
+    );
+  }
+}
+
+/// 自绘顶栏的投影（varus AppBar elevation 20 的观感）：渐变阴影压在
+/// 内容区最上层，滚动内容从投影下方穿过。须放在 Stack 的 children 里
+/// （内部是 Positioned），如 `Stack(children: [body, HeaderShadow()])`
+class HeaderShadow extends StatelessWidget {
+  const HeaderShadow({super.key, this.height = 16});
+
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: IgnorePointer(
+        child: Container(
+          height: height,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Colors.black26, Colors.transparent],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

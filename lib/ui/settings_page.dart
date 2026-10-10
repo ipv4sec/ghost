@@ -81,7 +81,7 @@ class _SettingsPageState extends State<SettingsPage> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(p.name,
-                  style: TextStyle(fontSize: 15, color: AppTheme.textPrimary)),
+                  style: TextStyle(fontSize: 16, color: AppTheme.textPrimary)),
             ),
             Icon(Icons.check,
                 size: 20,

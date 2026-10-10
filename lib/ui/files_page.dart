@@ -416,7 +416,14 @@ class _FilesPageState extends State<FilesPage>
           children: [
             _header(), // 整块顶栏：app名 + 路径 + 统计
             if (_cutFid != null) _pasteBar(),
-            Expanded(child: _buildBody()),
+            Expanded(
+              // 顶栏投影压在列表上层：列表滚动时内容从投影下方穿过，
+              // 故用 Stack 叠加而非占布局的色带
+              child: Stack(
+                fit: StackFit.expand,
+                children: [_buildBody(), const HeaderShadow()],
+              ),
+            ),
           ],
         ),
         // 右下角新建文件夹 FAB（暂时隐藏，恢复时取消注释即可）
@@ -628,7 +635,7 @@ class _FilesPageState extends State<FilesPage>
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                                fontSize: 15, color: AppTheme.textPrimary)),
+                                fontSize: 16, color: AppTheme.textPrimary)),
                         const SizedBox(height: 2),
                         // 副标题：时间（文件夹/文件都有），文件多一项大小
                         Text(

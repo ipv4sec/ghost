@@ -30,7 +30,7 @@ class AboutPage extends StatelessWidget {
           Center(
             child: Text('Ghost',
                 style: TextStyle(
-                    fontSize: 20,
+                    fontSize: 22, // varus 主内容字号
                     fontWeight: FontWeight.w600,
                     color: AppTheme.textPrimary)),
           ),

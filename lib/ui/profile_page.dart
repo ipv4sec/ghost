@@ -120,7 +120,7 @@ class _ProfilePageState extends State<ProfilePage>
     final expiry = '至臻会员将于${fmtExpireCn(u.vipExpire)}到期';
     final subStyle = TextStyle(
       color: AppTheme.onHeader.withOpacity(0.6),
-      fontSize: 12,
+      fontSize: 13, // 到期/点阵行整体调大一档（TODO），点阵宽随 textW 自适应
     );
     // 存储点阵：小方块铺满到期行的剩余宽度（行尾与其对齐，
     // 间距 spaceBetween 均分约 2px）；非会员无对照行时固定 10 格。
@@ -180,7 +180,7 @@ class _ProfilePageState extends State<ProfilePage>
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: AppTheme.onHeader,
-                          fontSize: 16,
+                          fontSize: 18, // varus 抽屉头部字号
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -277,7 +277,7 @@ class _ProfilePageState extends State<ProfilePage>
             // 文字与图标的间距 = 图标距左缘的留白（20）
             const SizedBox(width: 20),
             Text(title,
-                style: TextStyle(fontSize: 15, color: AppTheme.textPrimary)),
+                style: TextStyle(fontSize: 16, color: AppTheme.textPrimary)),
           ],
         ),
       ),

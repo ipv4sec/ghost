@@ -183,7 +183,13 @@ class _SearchPageState extends State<SearchPage> {
         children: [
           _toolbar(),
           _chips(),
-          Expanded(child: _buildBody()),
+          Expanded(
+            // 工具栏投影压在结果列表上层（同主页顶栏）
+            child: Stack(
+              fit: StackFit.expand,
+              children: [_buildBody(), const HeaderShadow()],
+            ),
+          ),
         ],
       ),
     );
@@ -211,13 +217,13 @@ class _SearchPageState extends State<SearchPage> {
                   cursorColor: AppTheme.primary,
                   textInputAction: TextInputAction.search,
                   style: TextStyle(
-                      fontSize: 15, color: AppTheme.textPrimary),
+                      fontSize: 16, color: AppTheme.textPrimary),
                   onChanged: _onChanged,
                   onSubmitted: (_) => _submit(),
                   decoration: InputDecoration(
                     hintText: '搜索',
                     hintStyle: TextStyle(
-                        fontSize: 15, color: AppTheme.textSecondary),
+                        fontSize: 16, color: AppTheme.textSecondary),
                     suffixIcon: _controller.text.isNotEmpty
                         ? IconButton(
                             icon: Icon(Icons.close,
@@ -424,7 +430,7 @@ class _SearchPageState extends State<SearchPage> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          fontSize: 15, color: AppTheme.textPrimary)),
+                          fontSize: 16, color: AppTheme.textPrimary)),
                   const SizedBox(height: 2),
                   // 副标题：时间（文件夹/文件都有），文件多一项大小（与主页一致）
                   Text(

@@ -48,6 +48,8 @@ dependencies:
   cached_network_image: ^3.4.1
   # 视频在线播放
   video_player: ^2.9.2
+  # Material 2 风格主题（参考 varus）
+  flex_color_scheme: ^8.1.1
 
 dev_dependencies:
   flutter_test:
@@ -70,6 +72,17 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # 字体：西文 Montserrat，中文回退微软正黑体（同 varus）
+  fonts:
+    - family: Montserrat
+      fonts:
+        - asset: assets/fonts/Montserrat-Regular.ttf
+        - asset: assets/fonts/Montserrat-Bold.ttf
+          weight: 600
+    - family: 微软正黑体
+      fonts:
+        - asset: assets/fonts/微软正黑体.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

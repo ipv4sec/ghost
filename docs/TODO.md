@@ -1,6 +1,6 @@
 # 待做
 
-- [ ] 个人信息页文字偏小：用户名、会员到期行、存储点阵行的字号整体调大一档
+- [x] 个人信息页文字偏小：用户名、会员到期行、存储点阵行的字号整体调大一档
 - [ ] 更换应用图标（icon）与启动图（当前为 Flutter 默认样式；
       图标在 android/app/src/main/res/ 各 mipmap，启动图在
       android/app/src/main/res/drawable/launch_background.xml，
