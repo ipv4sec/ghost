@@ -16,8 +16,19 @@ import 'files_page.dart';
 ///   才请求下一页）
 /// - 存在分配中/下载中任务时每 1 秒轮询刷新（页面不在最前时不轮询，
 ///   避免挤占全局串行请求队列），全部结束后自动停止
+/// - 下载中不带进度条：状态文字直接带百分比（下载中 42%）
+/// - 副标题与文件页一致：日期之后是大小
+/// - 下载中卡住不动（含 0%）超过 1 分钟的任务按失败态展示（云下载通常
+///   很快完成，长挂多为无种子的死任务；仅影响展示，任务恢复前进后
+///   自动翻回下载中，服务端完成后翻回完成态）
+/// - autoOpen（设置「云下载后自动打开」）：从磁力页提交进来时盯住
+///   列表最新一条任务，轮询发现完成即自动打开其保存位置；任务失败
+///   或被删则不再等待。仅此入口生效，平时从主页进的列表不自动打开
 class TransferPage extends StatefulWidget {
-  const TransferPage({super.key});
+  const TransferPage({super.key, this.autoOpen = false});
+
+  /// 提交云下载后跳进来时为 true：等待任务完成自动打开
+  final bool autoOpen;
 
   @override
   State<TransferPage> createState() => _TransferPageState();
@@ -36,6 +47,17 @@ class _TransferPageState extends State<TransferPage> {
 
   Timer? _pollTimer;
   bool _refreshing = false; // 一轮轮询在途时跳过下一个 tick
+
+  /// 下载中超过该时长按失败态展示（本地判定，服务端状态不变）
+  static const _transferTimeout = Duration(minutes: 1);
+
+  /// infoHash → (最近一次进度变化时的百分比, 时间)。百分比一前进就重置，
+  /// 超时判定只针对「卡住不动」（含一直 0%）的任务
+  final Map<String, (int, DateTime)> _transferSince = {};
+
+  /// autoOpen 模式下待自动打开的任务（进页后列表最新一条的 infoHash；
+  /// 清空 = 不再盯：已打开/失败/被删/未开启）
+  String? _watchHash;
 
   @override
   void initState() {
@@ -75,7 +97,10 @@ class _TransferPageState extends State<TransferPage> {
         _loading = false;
         _error = null;
       });
+      _trackTransfers();
       _syncPollTimer();
+      _pickWatchTarget();
+      _maybeAutoOpen();
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -100,6 +125,61 @@ class _TransferPageState extends State<TransferPage> {
     } else if (!active && _pollTimer != null) {
       _pollTimer!.cancel();
       _pollTimer = null;
+    }
+  }
+
+  /// 维护超时计时起点：下载中任务首次出现或百分比前进时重置时间戳，
+  /// 任务完成/失败/移出列表后清掉
+  void _trackTransfers() {
+    final active =
+        _tasks.where((t) => t.status == 1).map((t) => t.infoHash).toSet();
+    _transferSince.removeWhere((k, _) => !active.contains(k));
+    final now = DateTime.now();
+    for (final t in _tasks.where((t) => t.status == 1)) {
+      final prev = _transferSince[t.infoHash];
+      if (prev == null || prev.$1 != t.percentDone) {
+        _transferSince[t.infoHash] = (t.percentDone, now);
+      }
+    }
+  }
+
+  /// 是否按失败态展示：服务端已失败，或下载中卡住不动（含 0%）超 1 分钟
+  /// （超时只改展示，轮询继续，任务恢复前进/真实完成后翻回原状态）
+  bool _shownFailed(OfflineTask t) {
+    if (t.failed) return true;
+    if (t.status != 1) return false;
+    final s = _transferSince[t.infoHash];
+    return s != null && DateTime.now().difference(s.$2) > _transferTimeout;
+  }
+
+  /// autoOpen：首次见到任务列表时把最新一条定为盯梢目标
+  /// （新提交的任务排在最前）；目标已定/未开启则不动
+  void _pickWatchTarget() {
+    if (!widget.autoOpen || _watchHash != null || _tasks.isEmpty) return;
+    _watchHash = _tasks.first.infoHash;
+  }
+
+  /// autoOpen：盯住的任务完成即自动打开其保存位置（只开一次）；
+  /// 失败或已从列表消失（被删）则停止等待
+  void _maybeAutoOpen() {
+    final hash = _watchHash;
+    if (!widget.autoOpen || hash == null) return;
+    OfflineTask? t;
+    for (final x in _tasks) {
+      if (x.infoHash == hash) {
+        t = x;
+        break;
+      }
+    }
+    if (t == null) {
+      _watchHash = null; // 已不在列表（被删）
+      return;
+    }
+    if (t.done) {
+      _watchHash = null;
+      _openTask(t);
+    } else if (t.failed || _shownFailed(t)) {
+      _watchHash = null; // 失败不再等待
     }
   }
 
@@ -136,7 +216,10 @@ class _TransferPageState extends State<TransferPage> {
           ..clear()
           ..addAll(pages.expand((x) => x));
       });
+      _trackTransfers();
       _syncPollTimer();
+      _pickWatchTarget();
+      _maybeAutoOpen();
     } catch (_) {
       // 轮询失败静默：保留现有数据，下一轮再试
     } finally {
@@ -235,15 +318,27 @@ class _TransferPageState extends State<TransferPage> {
     }
   }
 
+  /// 磁链展示：只保留 btih（magnet:?xt=urn:btih:…），dn/tr 等其余
+  /// 参数不展示；非磁链或无 btih 原样返回
+  static String _shortMagnet(String url) {
+    if (!url.startsWith('magnet:')) return url;
+    final m = RegExp(r'[?&]xt=urn:btih:([0-9A-Za-z]+)').firstMatch(url);
+    if (m == null) return url;
+    return 'magnet:?xt=urn:btih:${m.group(1)}';
+  }
+
   Widget _tile(OfflineTask t) {
+    final failed = _shownFailed(t);
+    // 与主页列表行（FileLeadingIcon）同款圆底图标风格：
+    // 圆底色区分状态（绿=完成 / 深金=失败 / 主题色=下载中），内嵌白色图案
     final icon = t.done
-        ? Icons.cloud_done
-        : t.failed
+        ? Icons.cloud_done_outlined
+        : failed
             ? Icons.error_outline
             : Icons.cloud_download_outlined;
-    final iconColor = t.done
+    final circleColor = t.done
         ? Colors.green
-        : t.failed
+        : failed
             ? AppTheme.accentDeep // 深金：金黄在白底上对比不足
             : AppTheme.primary;
     final time =
@@ -264,43 +359,40 @@ class _TransferPageState extends State<TransferPage> {
           _count = _count > 0 ? _count - 1 : 0;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已删除"${t.name.isEmpty ? t.url : t.name}"')),
+          SnackBar(
+              content: Text(
+                  '已删除"${t.name.isEmpty ? _shortMagnet(t.url) : t.name}"')),
         );
       },
       child: ListTile(
         onTap: () => _openTask(t),
-        leading: Icon(icon, color: iconColor, size: 26),
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(color: circleColor, shape: BoxShape.circle),
+          child: Icon(icon, color: Colors.white, size: 20),
+        ),
         title: Text(
-          t.name.isEmpty ? t.url : t.name,
+          // 无名任务展示磁链摘要（仅 btih，见 _shortMagnet）
+          t.name.isEmpty ? _shortMagnet(t.url) : t.name,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 14),
+          // 与文件页/搜索页列表行标题同字号
+          style: TextStyle(fontSize: 16, color: AppTheme.textPrimary),
         ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Text(
-              '${t.statusText}'
-              '${t.size > 0 ? ' · ${formatBytes(t.size)}' : ''}'
-              '${time.isNotEmpty ? ' · $time' : ''}',
-              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-            ),
-            if (t.status == 1) ...[
-              const SizedBox(height: 6),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: LinearProgressIndicator(
-                  value: t.percentDone.clamp(0, 100) / 100,
-                  minHeight: 4,
-                  backgroundColor: AppTheme.scaffold,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text('${t.percentDone}%',
-                  style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-            ],
-          ],
+        // 副标题与文件页一致：日期之后是大小；下载中不带进度条，
+        // 状态文字直接带百分比
+        subtitle: Text(
+          [
+            failed
+                ? '下载失败'
+                : t.status == 1
+                    ? '下载中 ${t.percentDone}%'
+                    : t.statusText,
+            if (time.isNotEmpty) time,
+            if (t.size > 0) formatBytes(t.size),
+          ].join(' · '),
+          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
         ),
       ),
     );

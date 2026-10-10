@@ -89,6 +89,33 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  /// 字体选择弹窗（同主题配色交互）：Montserrat / 系统字体，
+  /// 点击全局即时生效
+  Future<void> _showFontDialog() async {
+    final tm = ThemeManager.instance;
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('界面字体'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final f in AppFont.all)
+              ListTile(
+                dense: true,
+                title: Text(f.label),
+                trailing: f == AppTheme.font ? const Icon(Icons.check) : null,
+                onTap: () async {
+                  await tm.selectFont(f);
+                  if (dialogContext.mounted) Navigator.pop(dialogContext);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// 方案预览圆点：primary / primaryContainer / secondary / secondaryContainer
   Widget _schemeDots(FlexSchemeData scheme) {
     final colors = [
@@ -127,6 +154,28 @@ class _SettingsPageState extends State<SettingsPage> {
             subtitle: Text(AppTheme.current.name),
             trailing: const Icon(Icons.chevron_right),
             onTap: _showSchemeDialog,
+          ),
+          Divider(height: 1, color: AppTheme.divider),
+          // 界面字体：Montserrat（中文回退微软正黑体）/ 系统字体
+          ListTile(
+            leading: const Icon(Icons.font_download_outlined),
+            title: const Text('界面字体'),
+            subtitle: Text(AppTheme.font.label),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _showFontDialog,
+          ),
+          Divider(height: 1, color: AppTheme.divider),
+          // 云下载后自动打开：开启后从磁力页提交云下载，任务页等任务
+          // 完成即自动打开保存位置（盯列表最新一条，失败则不再等待）
+          SwitchListTile(
+            value: s.autoOpenAfterDownload,
+            // 本页不监听 Session，改完需 setState 刷新开关显示
+            onChanged: (v) async {
+              await s.setAutoOpenAfterDownload(v);
+              if (mounted) setState(() {});
+            },
+            title: const Text('云下载后自动打开'),
+            subtitle: const Text('提交云下载后等待完成，自动打开保存位置'),
           ),
           Divider(height: 1, color: AppTheme.divider),
           Padding(

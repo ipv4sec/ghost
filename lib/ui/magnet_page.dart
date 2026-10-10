@@ -47,9 +47,11 @@ class _MagnetPageState extends State<MagnetPage> {
         });
         return;
       }
-      // 成功：直接进任务进度页（替换本页，返回键回主页）
-      await Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const TransferPage()));
+      // 成功：直接进任务进度页（替换本页，返回键回主页）；
+      // 开了「云下载后自动打开」则带上标记，任务页等完成后自动打开
+      await Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => TransferPage(
+              autoOpen: Session.instance.autoOpenAfterDownload)));
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {

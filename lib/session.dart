@@ -21,6 +21,7 @@ class Session extends ChangeNotifier {
   static const _kAppId = 'ghost.app_id';
   static const _kBlocklist = 'ghost.blocklist';
   static const _kSort = 'ghost.sort';
+  static const _kAutoOpen = 'ghost.auto_open';
 
   /// 合法排序字段（设置页排序区块与持久化解析共用）
   static const sortFields = {'file_name', 'file_size', 'user_ptime', 'user_utime'};
@@ -61,6 +62,10 @@ class Session extends ChangeNotifier {
   String _orderField = 'user_ptime';
   bool _orderAsc = false;
 
+  /// 云下载完成后自动打开（设置页开关）：开启后从磁力页提交云下载，
+  /// 任务页等待任务完成即自动打开其保存位置，全程无需人工参与
+  bool _autoOpen = false;
+
   TokenBundle? get token => _token;
   bool get loggedIn => _token != null;
   bool get ready => _ready;
@@ -97,6 +102,7 @@ class Session extends ChangeNotifier {
     }
     _applyBlocklist(_prefs!.getStringList(_kBlocklist) ?? const []);
     _applySort(_prefs!.getString(_kSort));
+    _autoOpen = _prefs!.getBool(_kAutoOpen) ?? false;
     _ready = true;
     notifyListeners();
   }
@@ -112,6 +118,15 @@ class Session extends ChangeNotifier {
 
   /// 名字是否命中屏蔽词（包含匹配，大小写不敏感）
   bool isNameBlocked(String name) => nameBlocked(name, _blockLower);
+
+  /// 云下载完成后自动打开（见 _autoOpen 注释）
+  bool get autoOpenAfterDownload => _autoOpen;
+
+  Future<void> setAutoOpenAfterDownload(bool v) async {
+    _autoOpen = v;
+    await _prefs!.setBool(_kAutoOpen, v);
+    notifyListeners();
+  }
 
   /// 设置屏蔽词（规范化：trim、去空、忽略大小写去重）
   Future<void> setBlocklist(List<String> words) async {

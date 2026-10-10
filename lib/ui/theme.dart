@@ -17,6 +17,10 @@ class AppTheme {
   /// main() 里从 SharedPreferences 恢复
   static FlexSchemeData current = FlexColor.schemesList.first;
 
+  /// 当前界面字体（Montserrat / 系统字体二选一，见 [AppFont]）；
+  /// main() 里从 SharedPreferences 恢复
+  static AppFont font = AppFont.app;
+
   /// 当前方案的浅色色板
   static FlexSchemeColor get _c => current.light;
 
@@ -60,12 +64,12 @@ class AppTheme {
           : Colors.black87;
 
   static ThemeData light() {
-    // 参考 varus：flex_color_scheme + Material 2 + Montserrat 字体
-    // （中文回退微软正黑体），配色取当前内置方案；
+    // 参考 varus：flex_color_scheme + Material 2，配色取当前内置方案；
+    // 字体取当前选择（Montserrat 中文回退微软正黑体 / 系统字体）；
     // 顶栏 elevation 20 投影同 varus
     return FlexThemeData.light(
-      fontFamily: 'Montserrat',
-      fontFamilyFallback: const ['微软正黑体'],
+      fontFamily: font.family,
+      fontFamilyFallback: font.fallback,
       useMaterial3: false,
       colors: _c,
     ).copyWith(
@@ -105,12 +109,13 @@ class AppTheme {
 }
 
 /// 主题选择管理：切换后通知 MaterialApp 重建，并持久化到
-/// SharedPreferences（ghost.scheme，存方案名）
+/// SharedPreferences（ghost.scheme 存方案名、ghost.font 存字体 id）
 class ThemeManager extends ChangeNotifier {
   ThemeManager._();
   static final ThemeManager instance = ThemeManager._();
 
   static const _kScheme = 'ghost.scheme';
+  static const _kFont = 'ghost.font';
 
   /// 旧版 12 套色卡主题遗留的 key（存主题 id int），加载时顺手清掉
   static const _kLegacyTheme = 'ghost.theme';
@@ -123,11 +128,19 @@ class ThemeManager extends ChangeNotifier {
     final sp = await SharedPreferences.getInstance();
     await sp.remove(_kLegacyTheme); // 旧版主题 id 已无对应方案
     final name = sp.getString(_kScheme);
-    if (name == null) return;
-    for (final s in FlexColor.schemesList) {
-      if (s.name == name) {
-        AppTheme.current = s;
-        return;
+    if (name != null) {
+      for (final s in FlexColor.schemesList) {
+        if (s.name == name) {
+          AppTheme.current = s;
+          break;
+        }
+      }
+    }
+    final fontId = sp.getString(_kFont);
+    for (final f in AppFont.all) {
+      if (f.id == fontId) {
+        AppTheme.font = f;
+        break;
       }
     }
   }
@@ -140,6 +153,38 @@ class ThemeManager extends ChangeNotifier {
     final sp = await SharedPreferences.getInstance();
     await sp.setString(_kScheme, s.name);
   }
+
+  /// 切换界面字体：改 font → 通知重建（字体走 ThemeData 生效，
+  /// 不重挂载 home 子树）→ 持久化
+  Future<void> selectFont(AppFont f) async {
+    if (f == AppTheme.font) return;
+    AppTheme.font = f;
+    notifyListeners();
+    final sp = await SharedPreferences.getInstance();
+    await sp.setString(_kFont, f.id);
+  }
+}
+
+/// 界面字体选项（设置页二选一）：内置 Montserrat（中文回退微软正黑体）
+/// 或跟随系统
+class AppFont {
+  const AppFont._(this.id, this.label, this.family, this.fallback);
+
+  /// 持久化用 id（ghost.font）
+  final String id;
+
+  /// 设置页展示名
+  final String label;
+
+  /// 主题 fontFamily；null = 跟随系统
+  final String? family;
+  final List<String> fallback;
+
+  static const app =
+      AppFont._('app', 'Montserrat', 'Montserrat', ['微软正黑体']);
+  static const system = AppFont._('system', '系统字体', null, []);
+
+  static const List<AppFont> all = [app, system];
 }
 
 /// 文件类型中文名 + 类型图案（列表行圆形图标，见 [FileLeadingIcon]）
