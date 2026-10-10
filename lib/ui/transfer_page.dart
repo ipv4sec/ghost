@@ -330,7 +330,8 @@ class _TransferPageState extends State<TransferPage> {
   Widget _tile(OfflineTask t) {
     final failed = _shownFailed(t);
     // 与主页列表行（FileLeadingIcon）同款圆底图标风格：
-    // 圆底色区分状态（绿=完成 / 深金=失败 / 主题色=下载中），内嵌白色图案
+    // 圆底色区分状态（绿=完成 / 深金=失败 / 主题色=下载中），
+    // 图案色与文件页统一按底色亮度自动取黑/白
     final icon = t.done
         ? Icons.cloud_done_outlined
         : failed
@@ -370,7 +371,7 @@ class _TransferPageState extends State<TransferPage> {
           width: 40,
           height: 40,
           decoration: BoxDecoration(color: circleColor, shape: BoxShape.circle),
-          child: Icon(icon, color: Colors.white, size: 20),
+          child: Icon(icon, color: AppTheme.onColor(circleColor), size: 20),
         ),
         title: Text(
           // 无名任务展示磁链摘要（仅 btih，见 _shortMagnet）

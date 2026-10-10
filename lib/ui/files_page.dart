@@ -71,6 +71,9 @@ class _FilesPageState extends State<FilesPage>
   /// fid → 是否空文件夹（会话级缓存：重复刷新不再逐个重查详情）
   final Map<String, bool> _emptyDirCache = {};
 
+  /// 首屏空目录已自动弹回：防止重复 pop
+  bool _autoPopped = false;
+
   /// 正在播放"移除动画"的文件夹 fid：动画结束后才真正从列表剔除
   final Set<String> _removingIds = {};
 
@@ -212,7 +215,7 @@ class _FilesPageState extends State<FilesPage>
       final raw = (j['data'] as List)
           .map((e) => FileItem.fromListJson((e as Map).cast<String, dynamic>()))
           .toList();
-      final list = _filterByName(_filterBySize(raw));
+      final list = _filterByExt(_filterByName(_filterBySize(raw)));
       setState(() {
         _items
           ..clear()
@@ -223,6 +226,23 @@ class _FilesPageState extends State<FilesPage>
         _offset = (j['offset'] as num?)?.toInt() ?? 0;
         if (_offset == 0) _offset = raw.length;
       });
+      // 推入的文件页（如云下载任务的保存位置）：首屏加载完成可见条数
+      // 为 0 时不停留——直接弹回并 toast 无文件。空可能是服务端的，
+      // 也可能是内容全被本地过滤（.iso/小文件/屏蔽词）造成
+      // （点按时按服务端 count 判定，查不出这种「本地空」）
+      if (!_autoPopped &&
+          !widget.isHome &&
+          _stack.length == 1 &&
+          list.isEmpty &&
+          Navigator.of(context).canPop()) {
+        _autoPopped = true;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('无文件'),
+          duration: Duration(seconds: 1),
+        ));
+        Navigator.of(context).pop();
+        return;
+      }
       // 大小过滤后再剔除空文件夹（异步，不阻塞首屏）。
       // 先标记播放淡出折叠动画，动画走完再真正移除，避免瞬间消失晃眼
       final visible = await _hideEmptyDirs(_items.toList(), gen);
@@ -263,6 +283,14 @@ class _FilesPageState extends State<FilesPage>
     if (AppConfig.minFileSize <= 0) return src;
     return src
         .where((f) => f.isDir || f.size >= AppConfig.minFileSize)
+        .toList();
+  }
+
+  /// 扩展名过滤：.iso 文件不展示（云下载的镜像无需出现在列表）；
+  /// 文件夹不受限
+  List<FileItem> _filterByExt(List<FileItem> src) {
+    return src
+        .where((f) => f.isDir || !f.name.toLowerCase().endsWith('.iso'))
         .toList();
   }
 
@@ -324,7 +352,7 @@ class _FilesPageState extends State<FilesPage>
       final raw = (j['data'] as List)
           .map((e) => FileItem.fromListJson((e as Map).cast<String, dynamic>()))
           .toList();
-      final list = _filterByName(_filterBySize(raw));
+      final list = _filterByExt(_filterByName(_filterBySize(raw)));
       // 刷新已重置列表：丢弃过期分页结果
       if (!mounted || gen != _reloadGen) return;
       // 按 fid 去重：别处删除文件会使页边界位移，下一页可能重复上一页尾部
@@ -346,11 +374,39 @@ class _FilesPageState extends State<FilesPage>
     }
   }
 
-  void _openDir(FileItem f) {
+  Future<void> _openDir(FileItem f) async {
     if (f.encrypted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('加密文件夹，请使用 115 官方 App 查看')),
       );
+      return;
+    }
+    // 点按先取该目录文件列表（与列表页同参数、同过滤链）：
+    // 有可见内容才进入，为空直接 toast 无文件——「空」以过滤后
+    // 的可见结果为准（纯 .iso/小文件目录在服务端 count 看是非空的）。
+    // 读接口 2s 结果缓存：进入后的首屏 _reload 直接复用本次响应
+    List<FileItem>? visible;
+    try {
+      final j = await _client.listFiles(
+        cid: f.fid,
+        limit: _limit,
+        offset: 0,
+        order: Session.instance.orderField,
+        asc: Session.instance.orderAsc,
+      );
+      final raw = (j['data'] as List)
+          .map((e) => FileItem.fromListJson((e as Map).cast<String, dynamic>()))
+          .toList();
+      visible = _filterByExt(_filterByName(_filterBySize(raw)));
+    } catch (_) {
+      // 拉取失败按未知处理：正常进入，页面自己会显示错误与重试
+    }
+    if (!mounted) return;
+    if (visible != null && visible.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('无文件'),
+        duration: Duration(seconds: 1),
+      ));
       return;
     }
     setState(() {
@@ -475,7 +531,8 @@ class _FilesPageState extends State<FilesPage>
                     Padding(
                       padding: const EdgeInsets.only(left: 8),
                       child: IconButton(
-                        icon: Icon(Icons.menu, color: AppTheme.textPrimary),
+                        // 图案色与各页 AppBar 一致：按顶栏底色亮度取黑/白
+                        icon: Icon(Icons.menu, color: AppTheme.onHeader),
                         tooltip: '菜单',
                         onPressed: widget.onOpenProfile,
                       ),
@@ -485,8 +542,8 @@ class _FilesPageState extends State<FilesPage>
                     // 文件页监听变化即时重拉
                     PopupMenuButton<String>(
                       tooltip: '排序',
-                      icon: Icon(Icons.more_vert,
-                          color: AppTheme.textPrimary),
+                      // 图案色与各页 AppBar 一致：按顶栏底色亮度取黑/白
+                      icon: Icon(Icons.more_vert, color: AppTheme.onHeader),
                       color: Colors.white,
                       shape: const RoundedRectangleBorder(
                           borderRadius: BorderRadius.zero),

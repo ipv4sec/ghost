@@ -57,11 +57,12 @@ class AppTheme {
   static Color get vipEnd => _c.secondaryContainer;
 
   /// 深底配浅字、浅底配深字（FlexSchemeColor 不含 onX，
-  /// 按背景亮度估算）
-  static Color _onColor(Color bg) =>
+  /// 按背景亮度估算；圆底图标图案色统一走这条规则）
+  static Color onColor(Color bg) =>
       ThemeData.estimateBrightnessForColor(bg) == Brightness.dark
           ? Colors.white
           : Colors.black87;
+  static Color _onColor(Color bg) => onColor(bg);
 
   static ThemeData light() {
     // 参考 varus：flex_color_scheme + Material 2，配色取当前内置方案；
@@ -196,9 +197,9 @@ class KindStyle {
   static Color color(FileKind k) =>
       k == FileKind.folder ? AppTheme.accent : AppTheme.primary;
 
-  /// 圆内图案色：文件夹 accent 底配 onAccent，文件 primary 底配白
-  static Color iconColor(FileKind k) =>
-      k == FileKind.folder ? AppTheme.onAccent : Colors.white;
+  /// 圆内图案色：统一按底色亮度自动取黑/白（浅色底配深图案，
+  /// 深色底配白图案），观感与对比度兼顾
+  static Color iconColor(FileKind k) => AppTheme.onColor(color(k));
 
   /// 类型中文名
   static String label(FileKind k) => switch (k) {
@@ -228,8 +229,8 @@ class KindStyle {
       };
 }
 
-/// 圆形行图标：类型色圆底 + Material 类型图案（文件夹 accent 底
-/// onAccent 图案、文件 primary 底白图案；列表观感统一）
+/// 圆形行图标：类型色圆底 + Material 类型图案（图案色统一按底色亮度
+/// 自动黑/白，见 KindStyle.iconColor；列表观感统一）
 class FileLeadingIcon extends StatelessWidget {
   const FileLeadingIcon({super.key, required this.item, this.size = 40});
 
