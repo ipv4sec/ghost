@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'magnet_channel.dart';
 import 'session.dart';
 import 'ui/home_shell.dart';
 import 'ui/login_page.dart';
@@ -117,6 +118,7 @@ class _BootstrapState extends State<_Bootstrap> {
     if (!_inited) {
       _inited = true;
       Session.instance.init();
+      MagnetInbox.instance.init(); // 冷启动带入的磁力链接
     }
     // 首帧渲染后才起算最少停留：引擎初始化慢时（debug 包冷启动首帧可晚
     // 于 initState 数秒），initState 起算会让计时在首帧前就走完，启动页

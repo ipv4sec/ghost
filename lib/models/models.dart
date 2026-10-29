@@ -3,7 +3,7 @@ import 'dart:math';
 /// 文件类型分类（对应列表接口 type 枚举）
 enum FileKind { folder, doc, image, audio, video, archive, app, book, other }
 
-/// 通用文件项（文件列表用）
+/// 通用文件项（列表/搜索共用）
 class FileItem {
   FileItem({
     required this.fid,
@@ -107,6 +107,21 @@ class FileItem {
       encrypted: '${j['isp'] ?? 0}' == '1',
       sha1: '${j['sha1'] ?? ''}',
       playLong: _toInt(j['play_long']),
+    );
+  }
+
+  /// 从搜索接口 data[] 构建
+  factory FileItem.fromSearchJson(Map<String, dynamic> j) {
+    return FileItem(
+      fid: '${j['file_id'] ?? ''}',
+      pid: '${j['parent_id'] ?? ''}',
+      name: '${j['file_name'] ?? ''}',
+      isDir: '${j['file_category'] ?? '1'}' == '0',
+      size: _toInt(j['file_size']),
+      mtime: _toDate(j['user_ptime']),
+      ext: _extOf('${j['file_name'] ?? ''}'),
+      pickCode: '${j['pick_code'] ?? ''}',
+      sha1: '${j['sha1'] ?? ''}',
     );
   }
 
@@ -326,4 +341,49 @@ PlayInfo parsePlayInfo(Map<String, dynamic> j) {
     audioTracks: tracks,
     userDef: (d['user_def'] as num?)?.toInt() ?? 0,
   );
+}
+
+/// 云下载任务（115 /open/offline/get_task_list）
+class OfflineTask {
+  OfflineTask({
+    required this.infoHash,
+    required this.name,
+    required this.url,
+    required this.status,
+    required this.percentDone,
+    required this.size,
+    required this.addTime,
+    this.fileId = '',
+  });
+
+  final String infoHash;
+  final String name;
+  final String url;
+  final int status; // -1 失败 0 分配中 1 下载中 2 下载成功
+  final int percentDone; // 0-100
+  final int size; // 字节
+  final int addTime; // 秒级时间戳
+  final String fileId; // 完成后保存到的目录/文件 id（未完成为空）
+
+  bool get failed => status == -1;
+  bool get done => status == 2;
+
+  String get statusText => switch (status) {
+        -1 => '下载失败',
+        0 => '分配中',
+        1 => '下载中',
+        2 => '下载完成',
+        _ => '未知($status)',
+      };
+
+  factory OfflineTask.fromJson(Map<String, dynamic> j) => OfflineTask(
+        infoHash: '${j['info_hash'] ?? ''}',
+        name: '${j['name'] ?? ''}',
+        url: '${j['url'] ?? ''}',
+        status: (j['status'] as num?)?.toInt() ?? 0,
+        percentDone: (j['percentDone'] as num?)?.toInt() ?? 0,
+        size: (j['size'] as num?)?.toInt() ?? 0,
+        addTime: (j['add_time'] as num?)?.toInt() ?? 0,
+        fileId: '${j['file_id'] ?? ''}',
+      );
 }

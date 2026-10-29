@@ -12,6 +12,8 @@ import '../session.dart';
 import '../ui/theme.dart';
 import '../util/backup_service.dart';
 import '../util/formatters.dart';
+import 'search_page.dart';
+import 'transfer_page.dart';
 import 'tv.dart';
 import 'tv_cards.dart';
 import 'video_player_page.dart';
@@ -79,6 +81,10 @@ class _FilesPageState extends State<FilesPage>
   final Set<String> _removingIds = {};
 
   bool _gridView = false;
+
+  // 剪贴板：剪切中的文件（fid + 名字），非空时列表上方显示粘贴栏
+  String? _cutFid;
+  String? _cutName;
 
   /// 电视：进入目录/首次加载完成后聚焦列表首行（拿起遥控器即可上下
   /// 滚动）。一次性标志：首行构建时即消费（见 _buildList/_buildGrid），
@@ -479,6 +485,7 @@ class _FilesPageState extends State<FilesPage>
         body: Column(
           children: [
             _header(), // 整块顶栏：app名 + 路径 + 统计
+            if (_cutFid != null) _pasteBar(),
             Expanded(
               // 顶栏投影压在列表上层：列表滚动时内容从投影下方穿过，
               // 故用 Stack 叠加而非占布局的色带
@@ -501,7 +508,7 @@ class _FilesPageState extends State<FilesPage>
     );
   }
 
-  /// 整块象牙顶栏（搜索按钮与排序菜单已按需求移除；
+  /// 整块象牙顶栏（单击进云下载页、双击进搜索页，右上角三个点排序；
   /// 路径行 + 统计行暂时隐藏，恢复时取消注释）
   Widget _header() {
     // final folders = _items.where((e) => e.isDir).length;
@@ -516,26 +523,66 @@ class _FilesPageState extends State<FilesPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 第一行：汉堡按钮（搜索按钮与排序菜单已按需求移除）。
-            // 行高 64：48 的图标按钮留出上下各 8 的余量，单独成行不显挤。
+            // 第一行：汉堡 + 整条点按手势（单击云下载/双击搜索）+
+            // 右上角三个点排序。行高 64：48 的图标按钮留出上下各 8 的
+            // 余量，单独成行不显挤；汉堡/三个点自身的手势在内层，
+            // 点它们不触发整条手势。
             // 电视端不要汉堡（抽屉/退出入口已按需求移除），首行直接面包屑
             if (!Tv.isTv)
-              SizedBox(
-                height: 64,
-                child: Row(
-                  children: [
-                    // 左缘 8：汉堡图标中心 (8+24) 与列表行文件图标中心
-                    // (12+20) 落在同一竖线上
-                    Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: IconButton(
-                        // 图案色与各页 AppBar 一致：按顶栏底色亮度取黑/白
-                        icon: Icon(Icons.menu, color: AppTheme.onHeader),
-                        tooltip: '菜单',
-                        onPressed: widget.onOpenProfile,
+              GestureDetector(
+                // opaque：整行（含空白处）都可点
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const TransferPage()),
+                ),
+                onDoubleTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SearchPage()),
+                ),
+                child: SizedBox(
+                  height: 64,
+                  child: Row(
+                    children: [
+                      // 左缘 8：汉堡图标中心 (8+24) 与列表行文件图标中心
+                      // (12+20) 落在同一竖线上
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: IconButton(
+                          // 图案色与各页 AppBar 一致：按顶栏底色亮度取黑/白
+                          icon: Icon(Icons.menu, color: AppTheme.onHeader),
+                          tooltip: '菜单',
+                          onPressed: widget.onOpenProfile,
+                        ),
                       ),
-                    ),
-                  ],
+                      const Expanded(child: SizedBox()),
+                      // 排序菜单（三个点）：经 Session 全局生效并记住选择，
+                      // 文件页监听变化即时重拉
+                      PopupMenuButton<String>(
+                        tooltip: '排序',
+                        // 图案色与各页 AppBar 一致：按顶栏底色亮度取黑/白
+                        icon: Icon(Icons.more_vert, color: AppTheme.onHeader),
+                        color: Colors.white,
+                        shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.zero),
+                        onSelected: (v) {
+                          if (v.startsWith('order:')) {
+                            final field = v.substring(6);
+                            // 点当前字段 = 切换升/降序；换字段保持当前方向
+                            Session.instance.setSort(
+                                field,
+                                field == Session.instance.orderField
+                                    ? !Session.instance.orderAsc
+                                    : Session.instance.orderAsc);
+                          }
+                        },
+                        itemBuilder: (_) => [
+                          _orderItem('file_name', '按名称'),
+                          _orderItem('file_size', '按大小'),
+                          _orderItem('user_ptime', '按上传时间'),
+                          _orderItem('user_utime', '按修改时间'),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             // 电视：路径面包屑放顶栏行（行高/垂直居中/左缘与主页顶栏一致，
@@ -578,6 +625,27 @@ class _FilesPageState extends State<FilesPage>
             // 不额外垫底部间距：图标行在 64 高度内居中，上下留白一致
           ],
         ),
+      ),
+    );
+  }
+
+  PopupMenuItem<String> _orderItem(String field, String label) {
+    final selected = Session.instance.orderField == field;
+    return PopupMenuItem(
+      value: 'order:$field',
+      child: Row(
+        // 菜单宽度被 SDK 固定为 56 的倍数(此菜单=168lp)，行内容整体居中：
+        // 内容自身左右对称(前导 18+8=26，尾随 26)，居中后文字两侧留白相等
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (selected)
+            Icon(Icons.check, size: 18, color: AppTheme.primary)
+          else
+            const SizedBox(width: 18),
+          const SizedBox(width: 8),
+          Text(label),
+          const SizedBox(width: 26),
+        ],
       ),
     );
   }
@@ -744,8 +812,8 @@ class _FilesPageState extends State<FilesPage>
           child: InkWell(
             autofocus: autoFocusFirst,
             onTap: () => _onItemTap(f),
-            // 长按：弹窗把名字（可编辑）保存到屏蔽列表
-            onLongPress: () => _showBlockDialog(f),
+            // 长按：操作菜单（剪切/删除/重命名）
+            onLongPress: () => _showRowMenu(ctx, f),
             child: Padding(
               padding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -820,8 +888,8 @@ class _FilesPageState extends State<FilesPage>
               borderRadius: BorderRadius.circular(12),
               autofocus: autoFocusFirst,
               onTap: () => _onItemTap(f),
-              // 同列表行长按：弹窗保存到屏蔽列表
-              onLongPress: () => _showBlockDialog(f),
+              // 长按：文件信息面板（含播放入口）
+              onLongPress: () => _showInfoSheet(f),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -884,6 +952,173 @@ class _FilesPageState extends State<FilesPage>
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('创建失败：${e.message}')));
       }
+    }
+  }
+
+  // ---------------- 行菜单操作：剪切 / 删除 / 重命名 ----------------
+
+  /// 长按操作菜单：原行尾 ⋮ 的 PopupMenu 样式（白底直角），
+  /// 锚定在行右端（原 ⋮ 一侧）向下弹出，而非底部面板
+  Future<void> _showRowMenu(BuildContext rowCtx, FileItem f) async {
+    final rowBox = rowCtx.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (rowBox == null || overlay == null) return;
+    final anchor = RelativeRect.fromRect(
+      Rect.fromLTWH(rowBox.size.width - 48, 0, 48, rowBox.size.height)
+          .shift(rowBox.localToGlobal(Offset.zero, ancestor: overlay)),
+      Offset.zero & overlay.size,
+    );
+    final v = await showMenu<String>(
+      context: context,
+      position: anchor,
+      color: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      items: const [
+        PopupMenuItem(value: 'cut', child: Text('剪切')),
+        PopupMenuItem(value: 'delete', child: Text('删除')),
+        PopupMenuItem(value: 'rename', child: Text('重命名')),
+      ],
+    );
+    if (v != null) _onRowMenu(v, f);
+  }
+
+  void _onRowMenu(String v, FileItem f) {
+    switch (v) {
+      case 'cut':
+        _cutItem(f);
+      case 'delete':
+        _deleteItem(f);
+      case 'rename':
+        _renameItem(f);
+    }
+  }
+
+  /// 剪切：记入剪贴板，到目标目录后点粘贴栏完成移动
+  void _cutItem(FileItem f) {
+    setState(() {
+      _cutFid = f.fid;
+      _cutName = f.name;
+    });
+  }
+
+  /// 粘贴栏：剪切中的提示 + 粘贴到当前目录 / 取消
+  Widget _pasteBar() {
+    return Container(
+      width: double.infinity,
+      color: AppTheme.scaffold,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
+        children: [
+          Icon(Icons.content_cut,
+              size: 16, color: AppTheme.textSecondary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '已剪切「$_cutName」',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: 12, color: AppTheme.textPrimary),
+            ),
+          ),
+          TextButton(
+            onPressed: _pasteItem,
+            child: const Text('粘贴到当前目录',
+                style: TextStyle(fontSize: 12)),
+          ),
+          TextButton(
+            onPressed: () =>
+                setState(() {
+                  _cutFid = null;
+                  _cutName = null;
+                }),
+            child: const Text('取消', style: TextStyle(fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pasteItem() async {
+    final fid = _cutFid;
+    if (fid == null) return;
+    try {
+      await _client.ufileMove(fid, _dir.cid);
+      if (!mounted) return;
+      setState(() {
+        _cutFid = null;
+        _cutName = null;
+      });
+      _reload();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      _toast('粘贴失败：${e.message}');
+    } catch (_) {
+      if (!mounted) return;
+      _toast('粘贴失败，请稍后重试');
+    }
+  }
+
+  /// 删除：确认后调接口，成功走收起动画并从列表移除
+  Future<void> _deleteItem(FileItem f) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除'),
+        content: Text('确定删除「${f.name}」？可到 115 回收站还原。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFF53F3F)),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _client.ufileDelete(f.fid);
+      if (!mounted) return;
+      // 复用空文件夹剔除的淡出折叠动画时序
+      setState(() => _removingIds.add(f.fid));
+      await Future<void>.delayed(const Duration(milliseconds: 320));
+      if (!mounted) return;
+      setState(() {
+        _removingIds.remove(f.fid);
+        _items.removeWhere((e) => e.fid == f.fid);
+        if (_count > 0) _count--;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      _toast('删除失败：${e.message}');
+    } catch (_) {
+      if (!mounted) return;
+      _toast('删除失败，请稍后重试');
+    }
+  }
+
+  /// 重命名：弹输入框，成功后整页刷新（排序/统计一并更新）
+  Future<void> _renameItem(FileItem f) async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => _TextInputDialog(title: '重命名', initial: f.name),
+    );
+    if (name == null || name.isEmpty || name == f.name) return;
+    try {
+      await _client.ufileRename(f.fid, name);
+      _reload();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      _toast('重命名失败：${e.message}');
+    } catch (_) {
+      if (!mounted) return;
+      _toast('重命名失败，请稍后重试');
     }
   }
 
@@ -1126,11 +1361,13 @@ class _ErrorView extends StatelessWidget {
 class _TextInputDialog extends StatefulWidget {
   const _TextInputDialog({
     required this.title,
+    this.initial = '',
     this.hint,
     this.confirmText = '确定',
   });
 
   final String title;
+  final String initial;
   final String? hint;
   final String confirmText;
 
@@ -1139,7 +1376,8 @@ class _TextInputDialog extends StatefulWidget {
 }
 
 class _TextInputDialogState extends State<_TextInputDialog> {
-  late final TextEditingController _ctrl = TextEditingController();
+  late final TextEditingController _ctrl =
+      TextEditingController(text: widget.initial);
 
   @override
   void dispose() {

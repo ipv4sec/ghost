@@ -9,6 +9,7 @@ import android.content.res.Configuration
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
 import android.view.Surface
@@ -18,6 +19,10 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import kotlin.math.roundToInt
 
+// 转发系统"点击 magnet: 磁力链接"的 Intent 到 Flutter（channel: ghost/intent）：
+// - 冷启动：onCreate 捕获，Dart 侧启动时通过 getInitialLink 拉取
+// - 热启动（singleTop 复用）：onNewIntent 实时回调 onMagnetLink
+//
 // 播放页手势通道（channel: ghost/player）：媒体音量 + 窗口亮度读写 + 方向解锁 +
 // 播放常亮。亮度用 window attributes（仅本 Activity 生效，退出播放页恢复跟随
 // 系统）；音量走 AudioManager STREAM_MUSIC（系统级，与物理音量键一致）；
@@ -33,6 +38,9 @@ import kotlin.math.roundToInt
 // 注意 FlutterActivity 不是 ComponentActivity，不能 registerForActivityResult，
 // 权限结果走 onRequestPermissionsResult 桥接。
 class MainActivity : FlutterActivity() {
+    private var initialLink: String? = null
+    private var queuedLink: String? = null
+    private var channel: MethodChannel? = null
 
     private companion object {
         const val REQ_STORAGE = 0x67
@@ -40,11 +48,56 @@ class MainActivity : FlutterActivity() {
 
     private var pendingStorageResult: MethodChannel.Result? = null
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        initialLink = magnetFrom(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val link = magnetFrom(intent)
+        if (link != null) {
+            val ch = channel
+            if (ch != null) {
+                ch.invokeMethod("onMagnetLink", link)
+            } else {
+                // 引擎未就绪（极短暂窗口）：暂存，configureFlutterEngine 时补发
+                queuedLink = link
+            }
+        }
+    }
+
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
+        channel = MethodChannel(engine.dartExecutor.binaryMessenger, "ghost/intent").also { ch ->
+            ch.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getInitialLink" -> {
+                        val link = initialLink ?: queuedLink
+                        initialLink = null
+                        queuedLink = null
+                        result.success(link)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+            queuedLink?.let { link ->
+                ch.invokeMethod("onMagnetLink", link)
+                queuedLink = null
+            }
+        }
         setUpPlayerChannel(engine)
         setUpBackupChannel(engine)
     }
+
+    override fun cleanUpFlutterEngine(engine: FlutterEngine) {
+        channel = null
+        super.cleanUpFlutterEngine(engine)
+    }
+
+    private fun magnetFrom(intent: Intent?): String? =
+        intent?.dataString?.takeIf { it.startsWith("magnet:") }
 
     private fun setUpPlayerChannel(engine: FlutterEngine) {
         MethodChannel(engine.dartExecutor.binaryMessenger, "ghost/player").setMethodCallHandler { call, result ->

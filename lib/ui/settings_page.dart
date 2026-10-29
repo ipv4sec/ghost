@@ -8,7 +8,7 @@ import '../util/formatters.dart';
 import 'tv.dart';
 
 /// 设置页：主题配色（flex_color_scheme 内置方案，点击弹列表切换）+
-/// 界面字体 / 屏蔽词 / 备份与恢复
+/// 界面字体 / 云下载后自动打开 / AppID 本地覆盖 / 屏蔽词 / 备份与恢复
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -18,12 +18,14 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage>
     with WidgetsBindingObserver {
+  late final TextEditingController _ctrl;
   late final TextEditingController _blockCtrl;
   BackupStatus? _bk;
 
   @override
   void initState() {
     super.initState();
+    _ctrl = TextEditingController(text: Session.instance.userAppId);
     _blockCtrl =
         TextEditingController(text: Session.instance.blocklist.join('\n'));
     WidgetsBinding.instance.addObserver(this);
@@ -33,6 +35,7 @@ class _SettingsPageState extends State<SettingsPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _ctrl.dispose();
     _blockCtrl.dispose();
     super.dispose();
   }
@@ -46,6 +49,18 @@ class _SettingsPageState extends State<SettingsPage>
   Future<void> _refreshBk() async {
     final st = await BackupService.instance.status();
     if (mounted) setState(() => _bk = st);
+  }
+
+  Future<void> _save() async {
+    await Session.instance.setUserAppId(_ctrl.text);
+    if (!mounted) return;
+    setState(() {}); // 刷新"当前生效"展示
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text(_ctrl.text.trim().isEmpty
+              ? '已恢复内置 AppID'
+              : '已保存，下次扫码登录时生效')),
+    );
   }
 
   Future<void> _saveBlocklist() async {
@@ -198,6 +213,7 @@ class _SettingsPageState extends State<SettingsPage>
   @override
   Widget build(BuildContext context) {
     final s = Session.instance;
+    final usingOverride = s.userAppId.isNotEmpty;
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(title: const Text('设置')),
@@ -220,6 +236,78 @@ class _SettingsPageState extends State<SettingsPage>
             subtitle: Text(AppTheme.font.label),
             trailing: const Icon(Icons.chevron_right),
             onTap: _showFontDialog,
+          ),
+          Divider(height: 1, color: AppTheme.divider),
+          // 云下载后自动打开：开启后从磁力页提交云下载，任务页等任务
+          // 完成即自动打开保存位置（盯列表最新一条，失败则不再等待）
+          SwitchListTile(
+            value: s.autoOpenAfterDownload,
+            // 本页不监听 Session，改完需 setState 刷新开关显示
+            onChanged: (v) async {
+              await s.setAutoOpenAfterDownload(v);
+              if (mounted) setState(() {});
+            },
+            title: const Text('云下载后自动打开'),
+            subtitle: const Text('提交云下载后等待完成，自动打开保存位置'),
+          ),
+          Divider(height: 1, color: AppTheme.divider),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text('AppID',
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary)),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TextField(
+              controller: _ctrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                hintText: '留空使用内置 AppID',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Row(
+              children: [
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                      backgroundColor: AppTheme.primary),
+                  onPressed: _save,
+                  child: const Text('保存'),
+                ),
+                const SizedBox(width: 12),
+                TextButton(
+                  onPressed: () {
+                    _ctrl.clear();
+                    _save();
+                  },
+                  child: const Text('恢复内置'),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Text(
+              '当前生效：${s.appId}'
+              '${usingOverride ? '（本地覆盖）' : '（内置）'}',
+              style:
+                  TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              'AppID 即 115 开放平台 client_id，仅保存在本机；'
+              '修改后重新扫码登录时使用。',
+              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+            ),
           ),
           Divider(height: 1, color: AppTheme.divider),
           Padding(
@@ -276,7 +364,7 @@ class _SettingsPageState extends State<SettingsPage>
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Text(
               '名字包含任一屏蔽词的文件/文件夹不再显示'
-              '（文件列表，大小写不敏感）；随设置备份到 .ghost.json。',
+              '（文件列表与搜索结果，大小写不敏感）；随设置备份到 .ghost.json。',
               style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
             ),
           ),
