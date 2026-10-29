@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
+import '../util/backup_service.dart';
 
 /// 主题色快捷入口：页面直接 AppTheme.xxx 取当前 flex 配色方案派生的
 /// 语义角色。应用整体保持浅色设计（白底深字），配色方案与派生规则
@@ -75,6 +76,9 @@ class AppTheme {
       colors: _c,
     ).copyWith(
       scaffoldBackgroundColor: Colors.white,
+      // 遥控器/键盘方向导航时的焦点高亮（电视 D-pad 必须清晰可见；
+      // 手机触摸模式不显示焦点高亮，观感不受影响）
+      focusColor: _c.primary.withValues(alpha: 0.14),
       appBarTheme: AppBarTheme(
         backgroundColor: header,
         foregroundColor: onHeader,
@@ -153,6 +157,7 @@ class ThemeManager extends ChangeNotifier {
     notifyListeners();
     final sp = await SharedPreferences.getInstance();
     await sp.setString(_kScheme, s.name);
+    BackupService.instance.scheduleSave();
   }
 
   /// 切换界面字体：改 font → 通知重建（字体走 ThemeData 生效，
@@ -163,6 +168,13 @@ class ThemeManager extends ChangeNotifier {
     notifyListeners();
     final sp = await SharedPreferences.getInstance();
     await sp.setString(_kFont, f.id);
+    BackupService.instance.scheduleSave();
+  }
+
+  /// 晚授权恢复备份后 live-apply：重读持久化并通知重建（免重启换主题/字体）
+  Future<void> reload() async {
+    await load();
+    notifyListeners();
   }
 }
 
@@ -230,7 +242,11 @@ class KindStyle {
 }
 
 /// 圆形行图标：类型色圆底 + Material 类型图案（图案色统一按底色亮度
-/// 自动黑/白，见 KindStyle.iconColor；列表观感统一）
+/// 自动黑/白，见 KindStyle.iconColor；列表观感统一）。
+/// 有服务端缩略图时优先显示（视频 v_img / 图片 thumb / 文件夹封面 fco），
+/// 圆形裁剪、与图标同尺寸；加载中与失败均回退类型图标（不闪空白圈）。
+/// 走 Image.network：仅内存缓存不落盘（开发须知：用户文件内容
+/// 不缓存到本地磁盘）
 class FileLeadingIcon extends StatelessWidget {
   const FileLeadingIcon({super.key, required this.item, this.size = 40});
 
@@ -239,6 +255,27 @@ class FileLeadingIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final thumb = item.thumbUrl;
+    if (thumb == null) return _typeIcon();
+    return Container(
+      width: size,
+      height: size,
+      clipBehavior: Clip.antiAlias,
+      decoration: const BoxDecoration(shape: BoxShape.circle),
+      child: Image.network(
+        thumb,
+        fit: BoxFit.cover,
+        width: size,
+        height: size,
+        // 首帧到达前显示类型图标（wasSync = 命中内存缓存，直接出图）
+        frameBuilder: (ctx, child, frame, wasSync) =>
+            (wasSync || frame != null) ? child : _typeIcon(),
+        errorBuilder: (_, __, ___) => _typeIcon(),
+      ),
+    );
+  }
+
+  Widget _typeIcon() {
     return Container(
       width: size,
       height: size,

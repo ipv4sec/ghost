@@ -45,3 +45,9 @@ app.*.map.json
 # Local dev notes and screenshots
 /1.txt
 /shot_*.png
+
+# 本地临时文件（不入库）
+/1.txt
+/install-claude.sh
+/model-test.sh
+/shot_*.png

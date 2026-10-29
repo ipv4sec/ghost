@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
+<!-- 启动屏：深色底（与电视端页面同色）+ 居中「图标+启动中」组合图。
+     静态 drawable 无法绘制文字/动画，文字预渲染进 launch_logo.png；
+     item 固定 96dp 宽使图标部分显示 64dp，与 Flutter 启动页一致
+     （原 bitmap 按密度自适应，电视上图标偏小，用户要求调大加文字） -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="?android:colorBackground" />
+    <item android:drawable="@color/launch_bg" />
 
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
+    <item
+        android:gravity="center"
+        android:width="96dp"
+        android:height="88dp">
         <bitmap
             android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
+            android:src="@drawable/launch_logo" />
+    </item>
 </layer-list>

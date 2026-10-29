@@ -1,10 +1,26 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- 访问 115 开放平台 API -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 凭证备份恢复：API 24-29 运行时读写共享存储（WRITE 在 30+ 自动失效、
+         READ 在 30+ 读不到 Download 下非媒体文件，均限 maxSdkVersion=29）；
+         API 30+ 走「所有文件访问」特殊授权（侧载分发，不受 Play 政策约束） -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29"/>
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage"/>
+    <!-- 电视适配：声明 Leanback 界面与"无触摸屏"均为非必需，
+         手机/电视同一 APK；banner 用于 Android TV 桌面入口 -->
+    <uses-feature android:name="android.software.leanback" android:required="false"/>
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
     <application
         android:usesCleartextTraffic="true"
+        android:requestLegacyExternalStorage="true"
         android:label="妖妖舞"
         android:name="${applicationName}"
+        android:banner="@drawable/tv_banner"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
@@ -26,13 +42,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
-            <!-- 磁力链接：系统点击 magnet: 链接时可选用本应用，转 115 云下载 -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-                <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="magnet"/>
+                <!-- LEANBACK_LAUNCHER：应用出现在 Android TV 桌面（索尼电视） -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

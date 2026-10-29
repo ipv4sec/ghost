@@ -10,9 +10,10 @@ import '../models/models.dart';
 import '../network/api_client.dart';
 import '../session.dart';
 import '../ui/theme.dart';
+import '../util/backup_service.dart';
 import '../util/formatters.dart';
-import 'search_page.dart';
-import 'transfer_page.dart';
+import 'tv.dart';
+import 'tv_cards.dart';
 import 'video_player_page.dart';
 
 /// 目录栈中的一层
@@ -26,7 +27,7 @@ class DirEntry {
 /// 文件浏览页（100% 参照 Amaze 截图布局）
 ///
 /// - 整块深蓝顶栏：app 名（路径行 + 统计行暂时隐藏，恢复见 _header 内注释）
-/// - 列表行：玫红圆图标 + 名称/灰色时间副标题 + 行尾 ⋮
+/// - 列表行：玫红圆图标 + 名称/灰色时间副标题（行操作走长按菜单）
 /// - 全宽细分隔线；右下玫红 FAB 新建文件夹
 class FilesPage extends StatefulWidget {
   const FilesPage(
@@ -35,11 +36,11 @@ class FilesPage extends StatefulWidget {
   /// 顶栏汉堡按钮回调（打开"我的"）
   final VoidCallback? onOpenProfile;
 
-  /// 初始目录（如云下载任务的保存位置）；不传则从根目录开始
+  /// 初始目录；不传则从根目录开始
   final DirEntry? initialDir;
 
-  /// 是否为主页实例：主页根目录的返回手势走"再划一次退出"；
-  /// 推入的实例（如云下载任务位置页）在栈底直接 pop 回上一页
+  /// 是否为主页实例：主页根目录的返回手势走"再按一次返回退出"；
+  /// 推入的实例在栈底直接 pop 回上一页
   final bool isHome;
 
   @override
@@ -79,16 +80,18 @@ class _FilesPageState extends State<FilesPage>
 
   bool _gridView = false;
 
-  // 剪贴板：剪切中的文件（fid + 名字），非空时列表上方显示粘贴栏
-  String? _cutFid;
-  String? _cutName;
+  /// 电视：进入目录/首次加载完成后聚焦列表首行（拿起遥控器即可上下
+  /// 滚动）。一次性标志：首行构建时即消费（见 _buildList/_buildGrid），
+  /// 之后的刷新/加载更多/换排序重拉不会再触发，焦点不会被拽回首行；
+  /// 手机端恒为 false，行为不变
+  bool _autoFocusFirstRow = Tv.isTv;
 
-  // 根目录"再划一次退出"：上次返回手势时间 + 底部提示的自动清理
+  // 根目录"再按一次返回退出"：上次返回手势时间 + 底部提示的自动清理
   DateTime? _lastBackAt;
   Timer? _exitToastTimer;
   OverlayEntry? _exitToast;
 
-  /// 屏蔽词快照：Session 通知来源很多（token 刷新/AppID…），
+  /// 屏蔽词快照：Session 通知来源很多（token 刷新等），
   /// 仅屏蔽词实际变化才重拉列表
   List<String> _blockSnapshot = const [];
 
@@ -144,26 +147,32 @@ class _FilesPageState extends State<FilesPage>
     setState(() => _gridView = !_gridView);
     final p = await SharedPreferences.getInstance();
     await p.setBool('ghost.grid', _gridView);
+    BackupService.instance.scheduleSave();
   }
 
-  /// 屏幕正中 toast"再划一次退出此应用"：自绘小灰泡（无应用图标，
-  /// 底部不放——下方紧挨系统手势条，视觉上像多了两道线且无法去除），
-  /// 2 秒后自动消失，不拦截点击
-  void _showExitHint() {
+  /// 屏幕正中 toast：自绘小灰泡（无应用图标，底部不放——下方紧挨系统
+  /// 手势条，视觉上像多了两道线且无法去除），2 秒后自动消失，不拦截
+  /// 点击。无 Material 祖先时 Text 会继承框架 error 样式（黄色双下划线），
+  /// 包透明 Material 恢复正常渲染。退出提示与「无文件」等轻提示共用
+  void _showToast(String text) {
     _exitToastTimer?.cancel();
     _exitToast?.remove();
     _exitToast = OverlayEntry(
       builder: (_) => IgnorePointer(
         child: Center(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Text(
-              '再划一次退出此应用',
-              style: TextStyle(color: Colors.white, fontSize: 15),
+          child: Material(
+            type: MaterialType.transparency,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                text,
+                style: const TextStyle(color: Colors.white, fontSize: 15),
+              ),
             ),
           ),
         ),
@@ -175,6 +184,10 @@ class _FilesPageState extends State<FilesPage>
       _exitToast = null;
     });
   }
+
+  /// 根目录"再按一次返回退出应用"（同款小灰泡，文案对触摸侧滑返回与
+  /// 遥控器返回键通用）
+  void _showExitHint() => _showToast('再按一次返回退出应用');
 
   DirEntry get _dir => _stack.last;
 
@@ -226,7 +239,7 @@ class _FilesPageState extends State<FilesPage>
         _offset = (j['offset'] as num?)?.toInt() ?? 0;
         if (_offset == 0) _offset = raw.length;
       });
-      // 推入的文件页（如云下载任务的保存位置）：首屏加载完成可见条数
+      // 推入的文件页：首屏加载完成可见条数
       // 为 0 时不停留——直接弹回并 toast 无文件。空可能是服务端的，
       // 也可能是内容全被本地过滤（.iso/小文件/屏蔽词）造成
       // （点按时按服务端 count 判定，查不出这种「本地空」）
@@ -236,10 +249,7 @@ class _FilesPageState extends State<FilesPage>
           list.isEmpty &&
           Navigator.of(context).canPop()) {
         _autoPopped = true;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('无文件'),
-          duration: Duration(seconds: 1),
-        ));
+        _showToast('无文件');
         Navigator.of(context).pop();
         return;
       }
@@ -286,8 +296,7 @@ class _FilesPageState extends State<FilesPage>
         .toList();
   }
 
-  /// 扩展名过滤：.iso 文件不展示（云下载的镜像无需出现在列表）；
-  /// 文件夹不受限
+  /// 扩展名过滤：.iso 镜像文件不展示；文件夹不受限
   List<FileItem> _filterByExt(List<FileItem> src) {
     return src
         .where((f) => f.isDir || !f.name.toLowerCase().endsWith('.iso'))
@@ -403,15 +412,13 @@ class _FilesPageState extends State<FilesPage>
     }
     if (!mounted) return;
     if (visible != null && visible.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('无文件'),
-        duration: Duration(seconds: 1),
-      ));
+      _showToast('无文件');
       return;
     }
     setState(() {
       _stack.add(DirEntry(cid: f.fid, name: f.name));
       _items.clear();
+      _autoFocusFirstRow = Tv.isTv; // 电视：新目录聚焦首行
     });
     _reload();
   }
@@ -422,6 +429,7 @@ class _FilesPageState extends State<FilesPage>
     setState(() {
       _stack.removeLast();
       _items.clear();
+      _autoFocusFirstRow = Tv.isTv; // 电视：回到上级聚焦首行
     });
     _reload();
   }
@@ -441,13 +449,13 @@ class _FilesPageState extends State<FilesPage>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    // 顶栏浅色 → 深色状态栏图标，深色顶栏配浅色图标
+    // 顶栏浅色 → 深色状态栏图标，深色顶栏配浅色图标；电视端深色顶栏
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: AppTheme.lightHeader
-          ? SystemUiOverlayStyle.dark
-          : SystemUiOverlayStyle.light,
+      value: Tv.isTv || !AppTheme.lightHeader
+          ? SystemUiOverlayStyle.light
+          : SystemUiOverlayStyle.dark,
       child: PopScope(
-      // 主页实例拦截所有返回手势（子目录返回上级、根目录"再划一次退出"）；
+      // 主页实例拦截所有返回手势（子目录返回上级、根目录"再按一次返回退出"）；
       // 推入的实例在栈底直接 pop 回上一页
       canPop: !widget.isHome && _stack.length <= 1,
       onPopInvokedWithResult: (didPop, _) {
@@ -467,11 +475,10 @@ class _FilesPageState extends State<FilesPage>
         _showExitHint();
       },
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: Tv.isTv ? tvBg : Colors.white,
         body: Column(
           children: [
             _header(), // 整块顶栏：app名 + 路径 + 统计
-            if (_cutFid != null) _pasteBar(),
             Expanded(
               // 顶栏投影压在列表上层：列表滚动时内容从投影下方穿过，
               // 故用 Stack 叠加而非占布局的色带
@@ -494,7 +501,7 @@ class _FilesPageState extends State<FilesPage>
     );
   }
 
-  /// 整块象牙顶栏（单击进云下载页、双击进搜索页，右上角三个点排序；
+  /// 整块象牙顶栏（搜索按钮与排序菜单已按需求移除；
   /// 路径行 + 统计行暂时隐藏，恢复时取消注释）
   Widget _header() {
     // final folders = _items.where((e) => e.isDir).length;
@@ -503,26 +510,17 @@ class _FilesPageState extends State<FilesPage>
     //     ? '$folders+个文件夹，$files+个文件'
     //     : '$folders个文件夹，$files个文件';
     return Material(
-      color: AppTheme.header,
+      color: Tv.isTv ? tvBg : AppTheme.header,
       child: SafeArea(
         bottom: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 第一行：汉堡 + 整条点按手势（单击云下载/双击搜索）+
-            // 右上角三个点排序。行高 64：48 的图标按钮留出上下各 8 的
-            // 余量，单独成行不显挤；汉堡/三个点自身的手势在内层，
-            // 点它们不触发整条手势
-            GestureDetector(
-              // opaque：整行（含空白处）都可点
-              behavior: HitTestBehavior.opaque,
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const TransferPage()),
-              ),
-              onDoubleTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SearchPage()),
-              ),
-              child: SizedBox(
+            // 第一行：汉堡按钮（搜索按钮与排序菜单已按需求移除）。
+            // 行高 64：48 的图标按钮留出上下各 8 的余量，单独成行不显挤。
+            // 电视端不要汉堡（抽屉/退出入口已按需求移除），首行直接面包屑
+            if (!Tv.isTv)
+              SizedBox(
                 height: 64,
                 child: Row(
                   children: [
@@ -537,40 +535,26 @@ class _FilesPageState extends State<FilesPage>
                         onPressed: widget.onOpenProfile,
                       ),
                     ),
-                    const Expanded(child: SizedBox()),
-                    // 排序菜单（三个点）：经 Session 全局生效并记住选择，
-                    // 文件页监听变化即时重拉
-                    PopupMenuButton<String>(
-                      tooltip: '排序',
-                      // 图案色与各页 AppBar 一致：按顶栏底色亮度取黑/白
-                      icon: Icon(Icons.more_vert, color: AppTheme.onHeader),
-                      color: Colors.white,
-                      shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.zero),
-                      onSelected: (v) {
-                        if (v.startsWith('order:')) {
-                          final field = v.substring(6);
-                          // 点当前字段 = 切换升/降序；换字段保持当前方向
-                          Session.instance.setSort(
-                              field,
-                              field == Session.instance.orderField
-                                  ? !Session.instance.orderAsc
-                                  : Session.instance.orderAsc);
-                        }
-                      },
-                      itemBuilder: (_) => [
-                        _orderItem('file_name', '按名称'),
-                        _orderItem('file_size', '按大小'),
-                        _orderItem('user_ptime', '按上传时间'),
-                        _orderItem('user_utime', '按修改时间'),
-                      ],
-                    ),
                   ],
                 ),
               ),
-            ),
-            // 第二行：路径（无水波纹点击效果；点按仍返回上级）——暂时隐藏
-            // GestureDetector(
+            // 电视：路径面包屑放顶栏行（行高/垂直居中/左缘与主页顶栏一致，
+            // 风格位置两页统一；点祖先段直跳，遥控器回上级仍用返回键）
+            // ——暂时隐藏（用户要求）
+            // if (Tv.isTv)
+            //   SizedBox(
+            //     height: 72 * kTvScale,
+            //     child: Padding(
+            //       // 与网格卡片左缘对齐（同 48 边距）
+            //       padding:
+            //           const EdgeInsets.symmetric(horizontal: 48 * kTvScale),
+            //       child: TvBreadcrumb(
+            //         segments: ['首页', for (final d in _stack) d.name],
+            //         onJump: _jumpCrumb,
+            //       ),
+            //     ),
+            //   ),
+            // 第二行：路径（无水波纹点击效果；点按仍返回上级）——暂时隐藏            // GestureDetector(
             //   behavior: HitTestBehavior.opaque,
             //   onTap: _goUp,
             //   child: Padding(
@@ -598,28 +582,8 @@ class _FilesPageState extends State<FilesPage>
     );
   }
 
-  PopupMenuItem<String> _orderItem(String field, String label) {
-    final selected = Session.instance.orderField == field;
-    return PopupMenuItem(
-      value: 'order:$field',
-      child: Row(
-        // 菜单宽度被 SDK 固定为 56 的倍数(此菜单=168lp)，行内容整体居中：
-        // 内容自身左右对称(前导 18+8=26，尾随 26)，居中后文字两侧留白相等
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          if (selected)
-            Icon(Icons.check, size: 18, color: AppTheme.primary)
-          else
-            const SizedBox(width: 18),
-          const SizedBox(width: 8),
-          Text(label),
-          const SizedBox(width: 26),
-        ],
-      ),
-    );
-  }
-
   Widget _buildBody() {
+    if (Tv.isTv) return _buildTvBody();
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -651,7 +615,108 @@ class _FilesPageState extends State<FilesPage>
     );
   }
 
-  /// 列表视图：行 = 圆图标 | 名称+时间副标题 | ⋮（行间分隔线暂时隐藏）
+  /// 面包屑跳转（电视）：segments = [首页, ..._stack]，下标 i 对应
+  /// _stack[i-1]。i=0 = 回电视主页（目录栈截到 1 层后 pop，等重建后
+  /// canPop 才为真）；i>=1 = 截栈到第 i 层并重拉
+  void _jumpCrumb(int i) {
+    if (i >= _stack.length) return; // 当前层，忽略
+    if (i == 0) {
+      // 回电视主页：目录栈截到 1 层后 pop（等重建后 canPop 才为真）。
+      // _stack 是 late final，只能原地改
+      setState(() => _stack.removeRange(1, _stack.length));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.of(context).pop();
+      });
+      return;
+    }
+    setState(() {
+      _stack.removeRange(i, _stack.length);
+      _items.clear();
+      _autoFocusFirstRow = true; // 跳层后焦点回首卡
+    });
+    _reload();
+  }
+
+  /// 电视端文件夹页：深色底 + 4 列卡片网格（与主页同款卡片）——
+  /// 子文件夹卡在上、文件卡在下，翻页 footer 在末尾；手机端不受影响
+  Widget _buildTvBody() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(color: Colors.white));
+    }
+    if (_error != null) {
+      return _ErrorView(message: _error!, onRetry: _reload, dark: true);
+    }
+    if (_items.isEmpty) {
+      // 与列表态同策略：空但未到底则继续翻页，避免停死在空态
+      if (_offset < _count) {
+        _maybeLoadMore();
+        return const Center(child: CircularProgressIndicator(color: Colors.white));
+      }
+      final blocked = Session.instance.blocklist.isNotEmpty;
+      return Center(
+        child: Text(
+          blocked ? '没有可显示的文件（部分内容可能被屏蔽词过滤）' : '这个文件夹空空如也',
+          style: const TextStyle(color: tvTextDim),
+        ),
+      );
+    }
+    // 首卡 autofocus 一次性标志：首建时消费，刷新/翻页重建不抢焦点
+    final af = _autoFocusFirstRow;
+    _autoFocusFirstRow = false;
+    return NotificationListener<ScrollNotification>(
+      // 外层 ListView(children) 会一次构建全部子件，footer 无法像列表态
+      // 那样靠"构建即可见"触发翻页——改为接近底部时触发
+      onNotification: (n) {
+        if ((n is ScrollUpdateNotification || n is ScrollEndNotification) &&
+            n.metrics.extentAfter < 400) {
+          _maybeLoadMore();
+        }
+        return false;
+      },
+      child: ListView(
+        // 四边 20 与网格行距一致（左右原 48 与卡片间距不等，用户要求统一）
+        padding: const EdgeInsets.fromLTRB(
+            20 * kTvScale, 20 * kTvScale, 20 * kTvScale, 20 * kTvScale),
+        children: [
+          // 文件夹与文件合并在同一网格流中连续排列（文件夹在前、文件在后，
+          // 不分区块各自换行，同电视首页；手机端仍走列表视图不受影响）
+          if (_items.isNotEmpty)
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                crossAxisSpacing: 20 * kTvScale,
+                mainAxisSpacing: 20 * kTvScale,
+                childAspectRatio: 2.3,
+              ),
+              padding: EdgeInsets.zero,
+              itemCount: _items.length,
+              itemBuilder: (ctx, i) {
+                final f = _items[i];
+                return f.isDir
+                    ? TvFolderCard(
+                        item: f,
+                        onTap: _onItemTap,
+                        // 长按：同列表行，弹窗把名字保存到屏蔽列表
+                        onLongPress: () => _showBlockDialog(f),
+                        autofocus: af && i == 0,
+                      )
+                    : TvFileCard(
+                        item: f,
+                        onTap: _onItemTap,
+                        onLongPress: () => _showBlockDialog(f),
+                        autofocus: af && i == 0,
+                      );
+              },
+            ),
+          _loadMoreFooter(),
+        ],
+      ),
+    );
+  }
+
+  /// 列表视图：行 = 圆图标 | 名称+时间副标题（行间分隔线暂时隐藏）
   Widget _buildList() {
     return ListView.separated(
       // 显式传 padding：ScrollView 在 padding 为 null 时会把 MediaQuery 的
@@ -668,15 +733,19 @@ class _FilesPageState extends State<FilesPage>
           return _loadMoreFooter();
         }
         final f = _items[i];
+        // 电视首行 autofocus：一次性标志在首行构建时即消费（只改字段、
+        // 不 setState——它只影响后续构建），刷新/加载更多/换排序重建的
+        // 行不再带 autofocus，不会抢走焦点
+        final bool autoFocusFirst = i == 0 && _autoFocusFirstRow;
+        if (i == 0) _autoFocusFirstRow = false;
         return _FadeCollapse(
           key: ValueKey('row-${f.fid}'),
           removing: _removingIds.contains(f.fid),
-          // Builder：拿到行自身的 RenderBox，作为弹出菜单的锚定区域
-          child: Builder(
-            builder: (rowCtx) => InkWell(
+          child: InkWell(
+            autofocus: autoFocusFirst,
             onTap: () => _onItemTap(f),
-            // 长按 = 原 ⋮ 菜单（剪切/删除/重命名）；详情改由点按非视频文件进入
-            onLongPress: () => _showRowMenu(rowCtx, f),
+            // 长按：弹窗把名字（可编辑）保存到屏蔽列表
+            onLongPress: () => _showBlockDialog(f),
             child: Padding(
               padding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -706,31 +775,9 @@ class _FilesPageState extends State<FilesPage>
                       ],
                     ),
                   ),
-                  // 行尾 ⋮：剪切/删除/重命名 操作菜单——暂时隐藏，
-                  // 功能迁至长按（_showRowMenu），恢复时取消注释
-                  // SizedBox(
-                  //   width: 36,
-                  //   height: 40,
-                  //   child: PopupMenuButton<String>(
-                  //     padding: EdgeInsets.zero,
-                  //     tooltip: '操作',
-                  //     icon: Icon(Icons.more_vert,
-                  //         size: 20, color: AppTheme.textSecondary),
-                  //     color: Colors.white,
-                  //     shape: const RoundedRectangleBorder(
-                  //         borderRadius: BorderRadius.zero),
-                  //     onSelected: (v) => _onRowMenu(v, f),
-                  //     itemBuilder: (_) => const [
-                  //       PopupMenuItem(value: 'cut', child: Text('剪切')),
-                  //       PopupMenuItem(value: 'delete', child: Text('删除')),
-                  //       PopupMenuItem(value: 'rename', child: Text('重命名')),
-                  //     ],
-                  //   ),
-                  // ),
                 ],
               ),
             ),
-          ),
           ),
         );
       },
@@ -754,6 +801,9 @@ class _FilesPageState extends State<FilesPage>
           return _loadMoreFooter();
         }
         final f = _items[i];
+        // 电视首行 autofocus：同 _buildList，一次性标志构建时消费
+        final bool autoFocusFirst = i == 0 && _autoFocusFirstRow;
+        if (i == 0) _autoFocusFirstRow = false;
         // 网格单元格尺寸固定，无法收起高度，只做淡出
         return _FadeCollapse(
           key: ValueKey('grid-${f.fid}'),
@@ -768,8 +818,10 @@ class _FilesPageState extends State<FilesPage>
             ),
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
+              autofocus: autoFocusFirst,
               onTap: () => _onItemTap(f),
-              onLongPress: () => _showInfoSheet(f),
+              // 同列表行长按：弹窗保存到屏蔽列表
+              onLongPress: () => _showBlockDialog(f),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -835,171 +887,47 @@ class _FilesPageState extends State<FilesPage>
     }
   }
 
-  // ---------------- 行菜单操作：剪切 / 删除 / 重命名 ----------------
+  // ---------------- 长按：保存到屏蔽列表 ----------------
 
-  /// 长按操作菜单：原行尾 ⋮ 的 PopupMenu 样式（白底直角），
-  /// 锚定在行右端（原 ⋮ 一侧）向下弹出，而非底部面板
-  Future<void> _showRowMenu(BuildContext rowCtx, FileItem f) async {
-    final rowBox = rowCtx.findRenderObject() as RenderBox?;
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (rowBox == null || overlay == null) return;
-    final anchor = RelativeRect.fromRect(
-      Rect.fromLTWH(rowBox.size.width - 48, 0, 48, rowBox.size.height)
-          .shift(rowBox.localToGlobal(Offset.zero, ancestor: overlay)),
-      Offset.zero & overlay.size,
-    );
-    final v = await showMenu<String>(
-      context: context,
-      position: anchor,
-      color: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-      items: const [
-        PopupMenuItem(value: 'cut', child: Text('剪切')),
-        PopupMenuItem(value: 'delete', child: Text('删除')),
-        PopupMenuItem(value: 'rename', child: Text('重命名')),
-      ],
-    );
-    if (v != null) _onRowMenu(v, f);
-  }
-
-  void _onRowMenu(String v, FileItem f) {
-    switch (v) {
-      case 'cut':
-        _cutItem(f);
-      case 'delete':
-        _deleteItem(f);
-      case 'rename':
-        _renameItem(f);
-    }
-  }
-
-  /// 剪切：记入剪贴板，到目标目录后点粘贴栏完成移动
-  void _cutItem(FileItem f) {
-    setState(() {
-      _cutFid = f.fid;
-      _cutName = f.name;
-    });
-  }
-
-  /// 粘贴栏：剪切中的提示 + 粘贴到当前目录 / 取消
-  Widget _pasteBar() {
-    return Container(
-      width: double.infinity,
-      color: AppTheme.scaffold,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Row(
-        children: [
-          Icon(Icons.content_cut,
-              size: 16, color: AppTheme.textSecondary),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '已剪切「$_cutName」',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  fontSize: 12, color: AppTheme.textPrimary),
-            ),
-          ),
-          TextButton(
-            onPressed: _pasteItem,
-            child: const Text('粘贴到当前目录',
-                style: TextStyle(fontSize: 12)),
-          ),
-          TextButton(
-            onPressed: () =>
-                setState(() {
-                  _cutFid = null;
-                  _cutName = null;
-                }),
-            child: const Text('取消', style: TextStyle(fontSize: 12)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _pasteItem() async {
-    final fid = _cutFid;
-    if (fid == null) return;
-    try {
-      await _client.ufileMove(fid, _dir.cid);
-      if (!mounted) return;
-      setState(() {
-        _cutFid = null;
-        _cutName = null;
-      });
-      _reload();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      _toast('粘贴失败：${e.message}');
-    } catch (_) {
-      if (!mounted) return;
-      _toast('粘贴失败，请稍后重试');
-    }
-  }
-
-  /// 删除：确认后调接口，成功走收起动画并从列表移除
-  Future<void> _deleteItem(FileItem f) async {
+  /// 长按弹窗：文件/文件夹名字（可编辑）保存到屏蔽列表（与设置页同源）。
+  /// 保存后 Session 通知列表重拉，命中屏蔽词的行淡出消失
+  Future<void> _showBlockDialog(FileItem f) async {
+    final ctrl = TextEditingController(text: f.name);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除'),
-        content: Text('确定删除「${f.name}」？可到 115 回收站还原。'),
+        title: const Text('保存到屏蔽列表'),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(
+            isDense: true,
+            border: OutlineInputBorder(),
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             child: const Text('取消'),
           ),
+          // 电视：弹窗默认聚焦保存按钮，遥控器长按出弹窗后按 OK 即保存
           FilledButton(
+            autofocus: Tv.isTv,
             style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFF53F3F)),
+                backgroundColor: AppTheme.primary),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('删除'),
+            child: const Text('保存到屏蔽列表'),
           ),
         ],
       ),
     );
-    if (ok != true) return;
-    try {
-      await _client.ufileDelete(f.fid);
-      if (!mounted) return;
-      // 复用空文件夹剔除的淡出折叠动画时序
-      setState(() => _removingIds.add(f.fid));
-      await Future<void>.delayed(const Duration(milliseconds: 320));
-      if (!mounted) return;
-      setState(() {
-        _removingIds.remove(f.fid);
-        _items.removeWhere((e) => e.fid == f.fid);
-        if (_count > 0) _count--;
-      });
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      _toast('删除失败：${e.message}');
-    } catch (_) {
-      if (!mounted) return;
-      _toast('删除失败，请稍后重试');
-    }
-  }
-
-  /// 重命名：弹输入框，成功后整页刷新（排序/统计一并更新）
-  Future<void> _renameItem(FileItem f) async {
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => _TextInputDialog(title: '重命名', initial: f.name),
+    final word = ctrl.text.trim();
+    ctrl.dispose();
+    if (ok != true || word.isEmpty) return;
+    await Session.instance.setBlocklist(
+      [...Session.instance.blocklist, word],
     );
-    if (name == null || name.isEmpty || name == f.name) return;
-    try {
-      await _client.ufileRename(f.fid, name);
-      _reload();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      _toast('重命名失败：${e.message}');
-    } catch (_) {
-      if (!mounted) return;
-      _toast('重命名失败，请稍后重试');
-    }
+    if (!mounted) return;
+    _toast('已加入屏蔽列表：「$word」');
   }
 
   void _toast(String msg) {
@@ -1154,22 +1082,36 @@ class _FadeCollapseState extends State<_FadeCollapse>
 }
 
 class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
+  const _ErrorView({
+    required this.message,
+    required this.onRetry,
+    this.dark = false,
+  });
 
   final String message;
   final VoidCallback onRetry;
 
+  /// 电视深色底配色
+  final bool dark;
+
   @override
   Widget build(BuildContext context) {
+    final dim = dark ? tvTextDim : AppTheme.textSecondary;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.cloud_off, size: 64, color: AppTheme.textSecondary),
+          Icon(Icons.cloud_off, size: 64, color: dim),
           const SizedBox(height: 12),
-          Text(message, style: TextStyle(color: AppTheme.textSecondary)),
+          Text(message, style: TextStyle(color: dim)),
           const SizedBox(height: 16),
-          OutlinedButton(onPressed: onRetry, child: const Text('重试')),
+          OutlinedButton(
+            onPressed: onRetry,
+            style: dark
+                ? OutlinedButton.styleFrom(foregroundColor: Colors.white)
+                : null,
+            child: const Text('重试'),
+          ),
         ],
       ),
     );
@@ -1184,13 +1126,11 @@ class _ErrorView extends StatelessWidget {
 class _TextInputDialog extends StatefulWidget {
   const _TextInputDialog({
     required this.title,
-    this.initial = '',
     this.hint,
     this.confirmText = '确定',
   });
 
   final String title;
-  final String initial;
   final String? hint;
   final String confirmText;
 
@@ -1199,8 +1139,7 @@ class _TextInputDialog extends StatefulWidget {
 }
 
 class _TextInputDialogState extends State<_TextInputDialog> {
-  late final TextEditingController _ctrl =
-      TextEditingController(text: widget.initial);
+  late final TextEditingController _ctrl = TextEditingController();
 
   @override
   void dispose() {

@@ -161,20 +161,6 @@ class Open115Client {
     );
   }
 
-  /// 搜索
-  Future<Map<String, dynamic>> search(String keyword,
-      {int limit = 50, int offset = 0}) async {
-    return _cachedGetJson(
-      Uri.parse('${AppConfig.proApi}/open/ufile/search').replace(
-        queryParameters: {
-          'search_value': keyword,
-          'limit': '$limit',
-          'offset': '$offset',
-        },
-      ),
-    );
-  }
-
   /// 用户信息
   Future<Map<String, dynamic>> userInfo() =>
       _cachedGetJson(Uri.parse('${AppConfig.proApi}/open/user/info'));
@@ -189,30 +175,6 @@ class Open115Client {
     await _postMultipart(
       Uri.parse('${AppConfig.proApi}/open/folder/add'),
       {'pid': pid, 'file_name': name},
-    );
-  }
-
-  /// 重命名（文件与目录通用）
-  Future<void> ufileRename(String fileId, String newName) async {
-    await _postMultipart(
-      Uri.parse('${AppConfig.proApi}/open/ufile/update'),
-      {'file_id': fileId, 'file_name': newName},
-    );
-  }
-
-  /// 删除（移入回收站，可在 115 回收站还原）
-  Future<void> ufileDelete(String fileId) async {
-    await _postMultipart(
-      Uri.parse('${AppConfig.proApi}/open/ufile/delete'),
-      {'file_id': fileId},
-    );
-  }
-
-  /// 移动（剪切 + 粘贴：把 fileId 移动到 pid 目录下）
-  Future<void> ufileMove(String fileId, String targetPid) async {
-    await _postMultipart(
-      Uri.parse('${AppConfig.proApi}/open/ufile/move'),
-      {'file_id': fileId, 'pid': targetPid},
     );
   }
 
@@ -246,35 +208,6 @@ class Open115Client {
         'time': '$sec',
         'watch_end': watchEnd ? '1' : '0',
       },
-    );
-  }
-
-  // ---------------- 云下载 ----------------
-
-  /// 添加云下载链接任务（支持 HTTP(S)/FTP/磁力/电驴，换行分隔可批量）。
-  /// 返回顶层 state + data[]（每条链接各自的 state/code/message）
-  Future<Map<String, dynamic>> offlineAddTaskUrls(String urls,
-          {String wpPathId = '0'}) =>
-      _postMultipart(
-        Uri.parse('${AppConfig.proApi}/open/offline/add_task_urls'),
-        {'urls': urls, 'wp_path_id': wpPathId},
-      );
-
-  /// 云下载任务列表（分页，page 从 1 起）。
-  /// force：跳过 2s 缓存直取（任务页 1s 轮询用；注意全局串行限流 500ms，
-  /// 1 次/秒在限额内）
-  Future<Map<String, dynamic>> offlineTaskList(
-      {int page = 1, bool force = false}) {
-    final uri = Uri.parse('${AppConfig.proApi}/open/offline/get_task_list')
-        .replace(queryParameters: {'page': '$page'});
-    return force ? _getJson(uri) : _cachedGetJson(uri);
-  }
-
-  /// 删除云下载任务（按 info_hash，仅移除任务记录，不删已下载文件）
-  Future<void> offlineDelTask(String infoHash) async {
-    await _postMultipart(
-      Uri.parse('${AppConfig.proApi}/open/offline/del_task'),
-      {'info_hash': infoHash, 'delete_file': '0'},
     );
   }
 

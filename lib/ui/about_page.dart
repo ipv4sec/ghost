@@ -42,8 +42,8 @@ class AboutPage extends StatelessWidget {
           ),
           const SizedBox(height: 32),
           Divider(height: 1, color: AppTheme.divider),
-          _row('应用简介', '115 网盘第三方客户端：文件浏览、全盘搜索、'
-              '视频在线播放、磁力链接云下载。'),
+          _row('应用简介', '115 网盘第三方客户端：文件浏览、'
+              '视频在线播放。'),
           Divider(height: 1, color: AppTheme.divider),
           _row('数据来源', '基于 115 生活开放平台（open.115.com）'
               '提供的开放接口构建，账号授权数据保存在本机。'),

@@ -9,6 +9,7 @@ import 'package:video_player/video_player.dart';
 import '../models/models.dart';
 import '../network/api_client.dart';
 import '../session.dart';
+import 'tv.dart';
 
 /// 视频在线播放页（全屏沉浸式）
 ///
@@ -20,12 +21,20 @@ import '../session.dart';
 /// - 手势（整屏生效，含视频外黑边区域）：屏幕左半边上下滑调亮度（最低 10%），
 ///   右半边上下滑调音量（可到静音），均 2% 步进、上滑调大；左右滑（任意
 ///   位置）快退/快进（5s 一档，单次手势累计最多 5 分钟）
+/// - 遥控器（电视，Tv.isTv；同一 APK 手机/电视双端，触摸手势全部保留）：
+///   控件隐藏时页面根持焦点——左/右 = 快退/快进 10s 一档（复用 seek 手势
+///   指示器与播放态冻结逻辑），OK = 唤出控件并把焦点交给播放/暂停按钮，
+///   返回键不吞（系统默认退出页面）。控件可见时各按钮按方向键遍历聚焦、
+///   OK 激活，进度条聚焦加粗+光晕且左右 = ±5s；2 秒自动隐藏触发时焦点
+///   退回页面根
 /// - 屏幕常亮：播放期间保持常亮（原生 FLAG_KEEP_SCREEN_ON），暂停时解除
 ///   （系统超时后可正常熄屏省电），退出播放页时恢复
-/// - 覆盖控件：左上返回，右上倍速菜单（入口图标透明不可见）；底部一行 =
-///   播放/暂停（左）· 细进度条（与按钮同中心线）· 方向锁（右下），3 秒
-///   无操作自动隐藏。点按：屏幕中心（±20% 屏宽/高）= 播放/暂停，其余
-///   区域 = 切换控件显示
+/// - 覆盖控件：右上倍速菜单（仅手机：入口图标透明不可见、点击区域唤出；
+///   电视不显示）；底部一行 = 播放/暂停（左）· 细进度条（与按钮同
+///   中心线）· 方向锁（右下，电视隐藏，行尾留 24 余量），2 秒无操作
+///   自动隐藏。
+///   无返回按钮（用户要求移除），退出走系统返回手势/返回键。
+///   点按：屏幕中心（±20% 屏宽/高）= 播放/暂停，其余区域 = 切换控件显示
 class VideoPlayerPage extends StatefulWidget {
   const VideoPlayerPage({super.key, required this.item});
 
@@ -85,6 +94,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// 播放态，否则起播慢于 1.2 秒会闪一下暂停态）
   bool _everPlayed = false;
 
+  /// 视频可挂载显示（首帧已渲染）：Texture 在此电视上首帧前显示白色
+  /// 而非黑色（录屏实测挂载后满屏白 0.4 秒，用户反馈"打开文件闪白屏"），
+  /// 故等 _everPlayed（底层起播=首帧已出）再显示；800ms 兜底防起播异常
+  /// 时永远黑屏
+  bool _videoReady = false;
+  Timer? _videoReadyTimer;
+
   /// "待确认暂停"计时：isPlaying=false 多为 buffering（seek 后/加载中/
   /// 网络波动，通常 1 秒内恢复），延迟确认，期间按钮保持播放态
   Timer? _pauseConfirm;
@@ -104,6 +120,22 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   int _seekStartMs = 0; // seek 手势起始播放位置
   int _seekSteps = 0; // seek 手势累计步数（每步 5s，单次手势最多 ±60 步 = 5 分钟）
   Timer? _gestureTimer;
+
+  /// 遥控器（电视 D-pad）焦点节点：页面根（控件隐藏态收键）、底部播放/
+  /// 暂停按钮（根态 OK 交出焦点）、进度条（聚焦时左右 = ±5s）
+  final FocusNode _rootFocus = FocusNode(debugLabel: 'player-root');
+  final FocusNode _playFocus = FocusNode(debugLabel: 'play-pause');
+  final FocusNode _barFocus = FocusNode(debugLabel: 'progress-bar');
+
+  /// 倍速菜单打开中：期间不触发控件自动隐藏（焦点在菜单里，控件藏掉后
+  /// 菜单关闭时焦点将无处可回）
+  bool _menuOpen = false;
+
+  /// 遥控器 seek 会话：指示器显示期间（800ms 内连按/长按）从同一位置
+  /// 累计，避免底层 seek 未落地时从过期 position 重复起跳（与整屏横滑
+  /// 的 _seekStartMs/_seekSteps 同思路）
+  int _keySeekFromMs = 0;
+  int _keySeekSec = 0;
 
   @override
   void initState() {
@@ -127,8 +159,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     _gestureTimer?.cancel();
     _scrubTimer?.cancel();
     _pauseConfirm?.cancel();
+    _videoReadyTimer?.cancel();
     _reportAndClose();
     _controller?.dispose();
+    _rootFocus.dispose();
+    _playFocus.dispose();
+    _barFocus.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     // 退出播放页解除屏幕常亮
     _invokeDevice('keepScreenOn', false);
@@ -198,6 +234,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         return;
       }
       setState(() => _controller = c);
+      // 首帧兜底：起播慢于 800ms 也强制显示（避免网络极慢时一直黑屏）
+      _videoReadyTimer?.cancel();
+      _videoReadyTimer = Timer(const Duration(milliseconds: 800), () {
+        if (mounted && !_videoReady) setState(() => _videoReady = true);
+      });
       old?.dispose();
       c.addListener(_onTick);
       _scheduleHide();
@@ -311,11 +352,21 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       _pauseConfirm?.cancel();
       _pausePending = false;
       _everPlayed = true;
+      // 底层起播 = 首帧已渲染到 surface，此时挂载视频不会白屏
+      if (!_videoReady) _videoReady = true;
       if (!_wasPlaying) {
         // 确认恢复播放（外部暂停结束，如音频焦点回来）
         _wasPlaying = true;
         _scheduleHide(); // 恢复播放：继续无操作自动隐藏
         _invokeDevice('keepScreenOn', true); // 恢复常亮
+      } else if (_controlsVisible &&
+          !_menuOpen &&
+          !(_hideTimer?.isActive ?? false)) {
+        // 补排自动隐藏：_seekByKeys/seek 手势 → _revealControls 时底层正在
+        // buffering（isPlaying=false），_scheduleHide 被「未在播」短路且
+        // 此后无人再排（_wasPlaying 冻结为 true，走不进上面的恢复分支），
+        // 控件将永不隐藏。每个播放 tick 兜底检查，计时活跃时不重置
+        _scheduleHide();
       }
     } else if (_wasPlaying && _everPlayed && !_scrubbing && !_pausePending) {
       // isPlaying=false 多为 buffering（seek 后/网络波动，通常 1 秒内
@@ -341,9 +392,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     // 暂停期间控件常驻，不安排自动隐藏
     if (!(_controller?.value.isPlaying ?? false)) return;
     _hideTimer = Timer(const Duration(seconds: 2), () {
+      // 倍速菜单打开期间不隐藏：菜单关闭（选中/取消）时会重新 _revealControls
+      if (_menuOpen) return;
       // 计时期间可能被外部暂停，触发时再校验一次
       if (mounted && (_controller?.value.isPlaying ?? false)) {
         setState(() => _controlsVisible = false);
+        // 焦点必须退回页面根：控件已从树上摘除，焦点若留在（已不存在的）
+        // 按钮上，后续方向键会落在看不见的控件上
+        if (Tv.isTv) _rootFocus.requestFocus();
       }
     });
   }
@@ -458,6 +514,78 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     });
   }
 
+  // ---- 遥控器（电视 D-pad，参考 VLC on Android TV 的模型）----
+  // 手机上所有手势/触摸路径不变；以下逻辑仅 Tv.isTv 时生效
+
+  /// 页面根（控件隐藏态）的遥控器按键：左/右 = ±10s seek（复用触摸手势的
+  /// 指示器与播放态冻结逻辑），OK = 唤出控件并把焦点交给播放/暂停按钮
+  /// （不直接播放/暂停，避免连按 OK 状态抖动）；上/下不响应。
+  /// 焦点在具体按钮上时不在根节点、此回调不命中，交给默认遍历/激活；
+  /// 返回键不吞（系统默认退出页面）
+  KeyEventResult _onRootKeyEvent(FocusNode node, KeyEvent event) {
+    if (!Tv.isTv || !node.hasPrimaryFocus || event is KeyUpEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      _seekByKeys(-10);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowRight) {
+      _seekByKeys(10);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.select || // 遥控器 OK（DPAD_CENTER）
+        key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
+      _revealControls();
+      _focusPlayButton();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  /// 遥控器 seek：sec 为单档秒数（根态 ±10s、进度条聚焦态 ±5s），走触摸
+  /// seek 同一套冻结（_beginScrub/_armScrubTimer）与指示器逻辑
+  void _seekByKeys(int sec) {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized) return;
+    if (_gestureKind != _GestureKind.seek) {
+      // 新会话从当前播放位置起跳；指示器仍显示中（800ms 内连按/长按）
+      // 则继续累计
+      _keySeekFromMs = c.value.position.inMilliseconds;
+      _keySeekSec = 0;
+    }
+    _keySeekSec += sec;
+    final durMs = c.value.duration.inMilliseconds;
+    final target =
+        (_keySeekFromMs + _keySeekSec * 1000).clamp(0, durMs).toInt();
+    c.seekTo(Duration(milliseconds: target));
+    _beginScrub();
+    _flashGesture(_GestureKind.seek, _keySeekSec.toDouble());
+    _revealControls();
+  }
+
+  /// 遥控器按键触发手势指示器：显示数值，800ms 无后续按键后消失
+  /// （与拖动结束的消失节奏一致）
+  void _flashGesture(_GestureKind kind, double value) {
+    _gestureKind = kind;
+    _gestureValue = value;
+    _gestureTimer?.cancel();
+    _gestureTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) setState(() => _gestureKind = null);
+    });
+    setState(() {});
+  }
+
+  /// 根态 OK 后把焦点交给底部播放/暂停按钮：控件可能刚被唤出（按钮尚未
+  /// 挂载），等一帧挂载完成后再要焦点
+  void _focusPlayButton() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _playFocus.context != null) _playFocus.requestFocus();
+    });
+  }
+
   /// 右下角方向锁切换：锁定 = 原生固定当前方向（横屏锁横屏、竖屏锁竖屏，
   /// 传感器失效）；解锁 = 恢复完全跟随系统传感器（手机竖过来变竖屏播放）。
   /// UNSPECIFIED 必须走原生重置：SystemChrome 传全方向会被引擎映射成
@@ -530,7 +658,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         // 播放中显示后 2 秒无操作自动隐藏，暂停期间不自动隐藏
         onTap: () {
           setState(() => _controlsVisible = !_controlsVisible);
-          if (_controlsVisible) _scheduleHide();
+          if (_controlsVisible) {
+            _scheduleHide();
+          } else if (Tv.isTv) {
+            // 控件藏掉时焦点退回页面根，避免悬在已隐藏的按钮上
+            _rootFocus.requestFocus();
+          }
         },
         onVerticalDragStart: _onVerticalDragStart,
         onVerticalDragUpdate: _onVerticalDragUpdate,
@@ -540,26 +673,38 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         onVerticalDragCancel: _onGestureDragEnd,
         onHorizontalDragEnd: (_) => _onGestureDragEnd(),
         onHorizontalDragCancel: _onGestureDragEnd,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // 视频铺满全屏（Center+AspectRatio 等比居中，不裁切不溢出），
-            // 横竖屏均占满整屏
-            if (_controller != null && _controller!.value.isInitialized)
-              Center(
-                child: AspectRatio(
-                  aspectRatio: _controller!.value.aspectRatio,
-                  child: VideoPlayer(_controller!),
-                ),
-              )
-            else if (_error != null)
-              _errorView()
-            else
-              const Center(
-                  child: CircularProgressIndicator(color: Colors.white)),
-            if (_controlsVisible && _controller != null) ..._controls(),
-            if (_gestureKind != null) _gestureIndicator(),
-          ],
+        child: Focus(
+          // 页面根焦点（电视遥控器）：控件隐藏态由它收方向/确认键（见
+          // _onRootKeyEvent）；焦点在具体按钮上时不处理，交给默认遍历/
+          // 激活。手机上 autofocus 无副作用：触摸不移动焦点，根节点无视觉
+          focusNode: _rootFocus,
+          autofocus: true,
+          onKeyEvent: _onRootKeyEvent,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // 视频铺满全屏（Center+AspectRatio 等比居中，不裁切不溢出），
+              // 横竖屏均占满整屏
+              // 首帧渲染前不挂载视频（Texture 未出帧时此电视显示白色），
+              // 期间黑底 + 加载圈
+              if (_controller != null &&
+                  _controller!.value.isInitialized &&
+                  _videoReady)
+                Center(
+                  child: AspectRatio(
+                    aspectRatio: _controller!.value.aspectRatio,
+                    child: VideoPlayer(_controller!),
+                  ),
+                )
+              else if (_error != null)
+                _errorView()
+              else
+                const Center(
+                    child: CircularProgressIndicator(color: Colors.white)),
+              if (_controlsVisible && _controller != null) _controlsLayer(),
+              if (_gestureKind != null) _gestureIndicator(),
+            ],
+          ),
         ),
       ),
       ),
@@ -605,32 +750,46 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     );
   }
 
-  /// 重新显示覆盖控件并重置 3 秒隐藏计时
+  /// 重新显示覆盖控件并重置 2 秒隐藏计时
   void _revealControls() {
     if (!mounted) return;
     setState(() => _controlsVisible = true);
     _scheduleHide();
   }
 
-  /// 覆盖控件：左上返回，右上倍速；底部一行 = 播放/暂停（左）· 进度条（中）
+  /// 覆盖控件层：外面再包一层不参与遍历的 Focus——控件可见期间任何按键
+  /// （方向键在按钮间移动等）都重置 2 秒自动隐藏计时，避免遥控器导航
+  /// 中途控件消失（参考 VLC：有按键活动时控件常驻）。进度条自身处理掉的
+  /// 左右键（±5s seek）不会冒泡到这里，由 _seekByKeys 里的 _revealControls
+  /// 补计时
+  Widget _controlsLayer() {
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      includeSemantics: false,
+      onKeyEvent: Tv.isTv
+          ? (node, event) {
+              if (event is! KeyUpEvent) _revealControls();
+              return KeyEventResult.ignored;
+            }
+          : null,
+      child: Stack(fit: StackFit.expand, children: _controls()),
+    );
+  }
+
+  /// 覆盖控件：右上倍速（仅手机）；底部一行 = 播放/暂停（左）· 进度条（中）。
+  /// 不放返回按钮（用户要求移除）：退出走系统返回手势/遥控器返回键
   List<Widget> _controls() {
     final c = _controller!;
     return [
-      Positioned(
-        top: 0,
-        left: 0,
-        child: SafeArea(
-          child: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
+      // 倍速入口仅手机：电视遥控器无法盲点透明入口，电视上干脆不构建
+      // （也不进 D-pad 焦点遍历）
+      if (!Tv.isTv)
+        Positioned(
+          top: 0,
+          right: 0,
+          child: SafeArea(child: _speedMenu()),
         ),
-      ),
-      Positioned(
-        top: 0,
-        right: 0,
-        child: SafeArea(child: _speedMenu()),
-      ),
       Positioned(
         left: 0,
         right: 0,
@@ -649,6 +808,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             child: Row(
               children: [
                 IconButton(
+                  focusNode: _playFocus, // 电视：根态 OK 把焦点交到这里
                   // 透明按钮：无圆形底，纯三角/双竖条图标
                   iconSize: 32,
                   icon: Icon(
@@ -658,21 +818,27 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                   onPressed: _togglePlay,
                 ),
                 Expanded(child: _progressBar(c)),
-                IconButton(
-                  // 右下角方向锁：默认锁定（双横屏）；解锁后跟随手机物理
-                  // 方向（竖过来 = 竖屏播放）
-                  iconSize: 22,
-                  icon: Icon(
-                    _orientationLocked
-                        ? Icons.screen_lock_rotation
-                        : Icons.screen_rotation,
-                    color: _orientationLocked
-                        ? Colors.white
-                        : Colors.white70,
+                // 右下角方向锁仅手机：电视无重力传感器、不随物理方向
+                // 翻转，锁不锁没有意义
+                if (!Tv.isTv)
+                  IconButton(
+                    // 默认锁定（双横屏）；解锁后跟随手机物理方向
+                    // （竖过来 = 竖屏播放）
+                    iconSize: 22,
+                    icon: Icon(
+                      _orientationLocked
+                          ? Icons.screen_lock_rotation
+                          : Icons.screen_rotation,
+                      color: _orientationLocked
+                          ? Colors.white
+                          : Colors.white70,
+                    ),
+                    tooltip: _orientationLocked ? '解锁屏幕方向' : '锁定横屏',
+                    onPressed: _toggleOrientationLock,
                   ),
-                  tooltip: _orientationLocked ? '解锁屏幕方向' : '锁定横屏',
-                  onPressed: _toggleOrientationLock,
-                ),
+                // 电视：行尾没有方向锁按钮垫着，进度条会顶到屏幕右缘，
+                // 补 24 余量；手机端行尾自带方向锁按钮，不加
+                if (Tv.isTv) const SizedBox(width: 24),
               ],
             ),
           ),
@@ -681,9 +847,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     ];
   }
 
-  /// 右上角倍速菜单：入口图标完全透明不可见（用户要求隐藏），但右上角
-  /// 48x48 点击区域仍可点出菜单调节倍速。深色直角面板与播放器沉浸式黑底
-  /// 风格一致；菜单打开期间覆盖控件可能被 3 秒计时隐藏，选中/取消后重新唤出
+  /// 右上角倍速菜单（仅手机构建，见 _controls）：入口图标完全透明不可见
+  /// （用户要求隐藏），但右上角 48x48 点击区域仍可点出菜单调节倍速。
+  /// 深色直角面板与播放器沉浸式黑底风格一致；菜单打开期间（_menuOpen）
+  /// 不触发控件自动隐藏，选中/取消后重新唤出
   Widget _speedMenu() {
     return PopupMenuButton<double>(
       tooltip: '倍速',
@@ -692,12 +859,17 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       surfaceTintColor: Colors.transparent,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
       icon: const Icon(Icons.speed, color: Colors.transparent),
+      onOpened: () => _menuOpen = true,
       onSelected: (v) {
+        _menuOpen = false;
         setState(() => _speed = v);
         _controller?.setPlaybackSpeed(v);
         _revealControls();
       },
-      onCanceled: _revealControls,
+      onCanceled: () {
+        _menuOpen = false;
+        _revealControls();
+      },
       itemBuilder: (_) => [
         for (final v in _speedOptions)
           PopupMenuItem(
@@ -737,7 +909,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   /// 细进度条（2px）：已播放白色，未播放半透明（浅阴影感）；
-  /// 24px 触摸区与播放按钮同中心线，点按/横向拖动均跟手 seek
+  /// 24px 触摸区与播放按钮同中心线，点按/横向拖动均跟手 seek。
+  /// 电视：可聚焦，聚焦态加粗到 4px + 白色光晕（3 米距离可见），
+  /// 左右键 = ±5s seek（handled 拦住，不走默认焦点遍历）
   Widget _progressBar(VideoPlayerController c) {
     final durMs = c.value.duration.inMilliseconds;
     final ratio = durMs > 0
@@ -778,25 +952,62 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           _barDrag = false;
           _armScrubTimer();
         },
-        child: SizedBox(
-          height: 24,
-          child: Center(
-            child: SizedBox(
-              height: 2,
-              width: w,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(1),
-                child: Container(
-                  color: Colors.white38, // 底轨：半透明阴影感
-                  child: FractionallySizedBox(
-                    alignment: Alignment.centerLeft,
-                    widthFactor: ratio,
-                    child: const ColoredBox(color: Colors.white),
+        // ListenableBuilder：焦点变化时重建，切换加粗/光晕视觉
+        child: ListenableBuilder(
+          listenable: _barFocus,
+          builder: (context, _) {
+            final focused = _barFocus.hasFocus;
+            return Focus(
+              focusNode: _barFocus,
+              // 手机上不可聚焦（触摸交互不变）；电视进入 D-pad 遍历
+              canRequestFocus: Tv.isTv,
+              onKeyEvent: (node, event) {
+                if (!Tv.isTv || event is KeyUpEvent) {
+                  return KeyEventResult.ignored;
+                }
+                final key = event.logicalKey;
+                if (key == LogicalKeyboardKey.arrowLeft) {
+                  _seekByKeys(-5);
+                  return KeyEventResult.handled;
+                }
+                if (key == LogicalKeyboardKey.arrowRight) {
+                  _seekByKeys(5);
+                  return KeyEventResult.handled;
+                }
+                return KeyEventResult.ignored;
+              },
+              child: SizedBox(
+                height: 24,
+                child: Center(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    height: focused ? 4 : 2,
+                    width: w,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(focused ? 2 : 1),
+                      // 聚焦光晕：3 米距离也要看得清焦点在哪
+                      boxShadow: focused
+                          ? const [
+                              BoxShadow(color: Colors.white60, blurRadius: 6),
+                            ]
+                          : null,
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(focused ? 2 : 1),
+                      child: Container(
+                        color: Colors.white38, // 底轨：半透明阴影感
+                        child: FractionallySizedBox(
+                          alignment: Alignment.centerLeft,
+                          widthFactor: ratio,
+                          child: const ColoredBox(color: Colors.white),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       );
     });

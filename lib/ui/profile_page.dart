@@ -7,6 +7,7 @@ import '../ui/theme.dart';
 import '../util/formatters.dart';
 import 'about_page.dart';
 import 'settings_page.dart';
+import 'tv.dart';
 
 /// 用户信息（侧边抽屉内）
 ///
@@ -119,7 +120,7 @@ class _ProfilePageState extends State<ProfilePage>
   Widget _header(UserInfo u) {
     final expiry = '会员服务将于${fmtExpireCn(u.vipExpire)}到期';
     final subStyle = TextStyle(
-      color: AppTheme.onHeader.withOpacity(0.6),
+      color: AppTheme.onHeader.withValues(alpha: 0.6),
       fontSize: 13, // 到期/点阵行整体调大一档（TODO），点阵宽随 textW 自适应
     );
     // 存储点阵：小方块铺满到期行的剩余宽度（行尾与其对齐，
@@ -159,7 +160,7 @@ class _ProfilePageState extends State<ProfilePage>
           CircleAvatar(
             radius: 28,
             // onHeader 在浅色顶栏主题下为深色，半透明底两种主题都成立
-            backgroundColor: AppTheme.onHeader.withOpacity(0.12),
+            backgroundColor: AppTheme.onHeader.withValues(alpha: 0.12),
             foregroundImage:
                 u.avatar.isNotEmpty ? NetworkImage(u.avatar) : null,
             child: u.avatar.isEmpty
@@ -217,7 +218,7 @@ class _ProfilePageState extends State<ProfilePage>
                               // 已用方块深色、未用方块浅色
                               color: i < filledDots
                                   ? AppTheme.onHeader
-                                  : AppTheme.onHeader.withOpacity(0.25),
+                                  : AppTheme.onHeader.withValues(alpha: 0.25),
                             ),
                         ],
                       ),
@@ -299,9 +300,11 @@ class _ProfilePageState extends State<ProfilePage>
               context: context,
               builder: (ctx) => AlertDialog(
                 title: const Text('退出登录'),
-                content: const Text('将清除本机的授权凭证，需要重新扫码登录。'),
+                content: const Text('将清除本机的授权凭证并删除备份文件，需要重新扫码登录。'),
                 actions: [
                   TextButton(
+                    // 电视：弹窗默认聚焦「取消」，避免 OK 误触退出登录
+                    autofocus: Tv.isTv,
                     onPressed: () => Navigator.of(ctx).pop(false),
                     child: const Text('取消'),
                   ),
