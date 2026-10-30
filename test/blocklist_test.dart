@@ -3,33 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ghost/session.dart';
 
 void main() {
-  group('parseBlocklistInput', () {
-    test('按换行切分', () {
-      expect(Session.parseBlocklistInput('a\nb'), ['a', 'b']);
-    });
-
-    test('中英文逗号与换行混用、多余空白与空行剔除', () {
-      expect(Session.parseBlocklistInput('a，b, c ,\n\n d '), ['a', 'b', 'c', 'd']);
-    });
-
-    test('忽略大小写去重，保留首次出现的大小写', () {
-      expect(Session.parseBlocklistInput('A\na\nB'), ['A', 'B']);
-    });
-
-    test('空输入与纯空白输入', () {
-      expect(Session.parseBlocklistInput(''), []);
-      expect(Session.parseBlocklistInput('  \n \n'), []);
-    });
-
-    test('词内空格保留（不按空格切分）', () {
-      expect(Session.parseBlocklistInput('my file\nanother'), ['my file', 'another']);
-    });
-
-    test('Windows 换行 \\r\\n', () {
-      expect(Session.parseBlocklistInput('a\r\nb'), ['a', 'b']);
-    });
-  });
-
   group('nameBlocked', () {
     test('大小写不敏感的包含匹配', () {
       expect(Session.nameBlocked('My Movies', ['movie']), isTrue);

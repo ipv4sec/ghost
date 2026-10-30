@@ -156,10 +156,6 @@ class Session extends ChangeNotifier {
     ];
   }
 
-  /// 解析设置页输入：按换行与逗号（中英文）切分，去空白/空项，忽略大小写去重
-  static List<String> parseBlocklistInput(String raw) =>
-      _normalize(raw.split(RegExp(r'[\r\n,，]')));
-
   /// 纯匹配函数（[lowerWords] 须为小写；空列表永不命中）。
   /// w.isNotEmpty 双重防护：空字符串 contains('') 恒真，会屏蔽一切
   static bool nameBlocked(String name, List<String> lowerWords) {

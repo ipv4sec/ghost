@@ -20,3 +20,12 @@ String fmtExpireCn(int ts) {
   final p = fmtExpire(ts).split('-');
   return p.length == 3 ? '${p[0]}年${p[1]}月${p[2]}日' : fmtExpire(ts);
 }
+
+/// 磁力链接标准化展示：只保留 btih 哈希（magnet:?xt=urn:btih:…），
+/// dn/tr 等其余参数不展示；非磁链或无 btih 哈希返回 null
+String? shortMagnet(String url) {
+  if (!url.startsWith('magnet:')) return null;
+  final m = RegExp(r'[?&]xt=urn:btih:([0-9A-Za-z]+)').firstMatch(url);
+  if (m == null) return null;
+  return 'magnet:?xt=urn:btih:${m.group(1)}';
+}

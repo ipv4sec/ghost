@@ -8,7 +8,7 @@ import '../util/formatters.dart';
 import 'tv.dart';
 
 /// 设置页：主题配色（flex_color_scheme 内置方案，点击弹列表切换）+
-/// 界面字体 / 云下载后自动打开 / AppID 本地覆盖 / 屏蔽词 / 备份与恢复
+/// 界面字体 / 云下载后自动打开 / 屏蔽词标签管理 / 备份与恢复
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -18,16 +18,11 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage>
     with WidgetsBindingObserver {
-  late final TextEditingController _ctrl;
-  late final TextEditingController _blockCtrl;
   BackupStatus? _bk;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = TextEditingController(text: Session.instance.userAppId);
-    _blockCtrl =
-        TextEditingController(text: Session.instance.blocklist.join('\n'));
     WidgetsBinding.instance.addObserver(this);
     _refreshBk();
   }
@@ -35,8 +30,6 @@ class _SettingsPageState extends State<SettingsPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _ctrl.dispose();
-    _blockCtrl.dispose();
     super.dispose();
   }
 
@@ -51,28 +44,15 @@ class _SettingsPageState extends State<SettingsPage>
     if (mounted) setState(() => _bk = st);
   }
 
-  Future<void> _save() async {
-    await Session.instance.setUserAppId(_ctrl.text);
-    if (!mounted) return;
-    setState(() {}); // 刷新"当前生效"展示
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content: Text(_ctrl.text.trim().isEmpty
-              ? '已恢复内置 AppID'
-              : '已保存，下次扫码登录时生效')),
+  /// 删除一个屏蔽词标签：即时持久化并通知文件列表刷新
+  Future<void> _removeBlockWord(String w) async {
+    await Session.instance.setBlocklist(
+      Session.instance.blocklist.where((x) => x != w).toList(),
     );
-  }
-
-  Future<void> _saveBlocklist() async {
-    final words = Session.parseBlocklistInput(_blockCtrl.text);
-    await Session.instance.setBlocklist(words);
     if (!mounted) return;
-    setState(() {}); // 刷新"当前生效"计数
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content: Text(
-              words.isEmpty ? '已清空屏蔽词' : '已保存 ${words.length} 个屏蔽词')),
-    );
+    setState(() {}); // 本页不监听 Session，需手动刷新标签
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('已移除屏蔽词「$w」'), duration: const Duration(seconds: 1)));
   }
 
   Future<void> _backupNow() async {
@@ -213,7 +193,6 @@ class _SettingsPageState extends State<SettingsPage>
   @override
   Widget build(BuildContext context) {
     final s = Session.instance;
-    final usingOverride = s.userAppId.isNotEmpty;
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(title: const Text('设置')),
@@ -248,66 +227,7 @@ class _SettingsPageState extends State<SettingsPage>
               if (mounted) setState(() {});
             },
             title: const Text('云下载后自动打开'),
-            subtitle: const Text('提交云下载后等待完成，自动打开保存位置'),
-          ),
-          Divider(height: 1, color: AppTheme.divider),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text('AppID',
-                style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary)),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: TextField(
-              controller: _ctrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                hintText: '留空使用内置 AppID',
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Row(
-              children: [
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                      backgroundColor: AppTheme.primary),
-                  onPressed: _save,
-                  child: const Text('保存'),
-                ),
-                const SizedBox(width: 12),
-                TextButton(
-                  onPressed: () {
-                    _ctrl.clear();
-                    _save();
-                  },
-                  child: const Text('恢复内置'),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Text(
-              '当前生效：${s.appId}'
-              '${usingOverride ? '（本地覆盖）' : '（内置）'}',
-              style:
-                  TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Text(
-              'AppID 即 115 开放平台 client_id，仅保存在本机；'
-              '修改后重新扫码登录时使用。',
-              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-            ),
+            subtitle: const Text('云下载任务完成后自动打开保存位置'),
           ),
           Divider(height: 1, color: AppTheme.divider),
           Padding(
@@ -318,48 +238,31 @@ class _SettingsPageState extends State<SettingsPage>
                     fontWeight: FontWeight.w600,
                     color: AppTheme.textPrimary)),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: TextField(
-              controller: _blockCtrl,
-              minLines: 3,
-              maxLines: 6,
-              decoration: const InputDecoration(
-                hintText: '每行一个，也可用逗号分隔',
-                isDense: true,
-                border: OutlineInputBorder(),
+          // 屏蔽词标签：点 × 即删（添加走文件列表长按入口）
+          if (s.blocklist.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                '暂无屏蔽词；在文件列表长按文件/文件夹可添加',
+                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final w in s.blocklist)
+                    InputChip(
+                      label: Text(w),
+                      onDeleted: () => _removeBlockWord(w),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                ],
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Row(
-              children: [
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                      backgroundColor: AppTheme.primary),
-                  onPressed: _saveBlocklist,
-                  child: const Text('保存'),
-                ),
-                const SizedBox(width: 12),
-                TextButton(
-                  onPressed: () {
-                    _blockCtrl.clear();
-                    _saveBlocklist();
-                  },
-                  child: const Text('清空'),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Text(
-              '当前生效：${s.blocklist.length} 个屏蔽词',
-              style:
-                  TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-            ),
-          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Text(

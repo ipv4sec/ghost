@@ -22,13 +22,19 @@ import 'files_page.dart';
 ///   很快完成，长挂多为无种子的死任务；仅影响展示，任务恢复前进后
 ///   自动翻回下载中，服务端完成后翻回完成态）
 /// - autoOpen（设置「云下载后自动打开」）：从磁力页提交进来时盯住
-///   列表最新一条任务，轮询发现完成即自动打开其保存位置；任务失败
-///   或被删则不再等待。仅此入口生效，平时从主页进的列表不自动打开
+///   最新一条（即刚提交的任务，完成极快时进页已是完成态也会立即
+///   打开）；从主页进来且开了设置时盯最新一条未完成任务。轮询发现
+///   完成即自动打开其保存位置；任务失败或被删则不再等待（下载慢/
+///   长时间无进度不算失败，继续等到完成或离开本页）
 class TransferPage extends StatefulWidget {
-  const TransferPage({super.key, this.autoOpen = false});
+  const TransferPage({super.key, this.autoOpen = false, this.watchHash});
 
   /// 提交云下载后跳进来时为 true：等待任务完成自动打开
   final bool autoOpen;
+
+  /// 磁力页添加接口带回的 info_hash：任务列表排序不可靠（失败任务
+  /// 固定排最前），用它精确锁定刚添加的任务
+  final String? watchHash;
 
   @override
   State<TransferPage> createState() => _TransferPageState();
@@ -152,18 +158,40 @@ class _TransferPageState extends State<TransferPage> {
     return s != null && DateTime.now().difference(s.$2) > _transferTimeout;
   }
 
-  /// autoOpen：首次见到任务列表时把最新一条定为盯梢目标
-  /// （新提交的任务排在最前）；目标已定/未开启则不动
+  /// autoOpen：进页时定盯梢目标（目标已定则不动）。
+  /// 列表排序不可靠（失败任务固定排最前），一律按 add_time 取最新：
+  /// 磁力页提交进来（widget.autoOpen）盯最新一条——即刚提交的任务
+  ///（优先用添加接口带回的 watchHash 精确锁定）；主页进来且开了设置
+  /// 时盯最新一条未完成任务（下载完成后自动打开）
   void _pickWatchTarget() {
-    if (!widget.autoOpen || _watchHash != null || _tasks.isEmpty) return;
-    _watchHash = _tasks.first.infoHash;
+    if (_watchHash != null || _tasks.isEmpty) return;
+    if (widget.autoOpen) {
+      if (widget.watchHash != null) {
+        _watchHash = widget.watchHash;
+        return;
+      }
+      OfflineTask? newest;
+      for (final t in _tasks) {
+        if (newest == null || t.addTime > newest.addTime) newest = t;
+      }
+      if (newest != null) _watchHash = newest.infoHash;
+    } else if (Session.instance.autoOpenAfterDownload) {
+      OfflineTask? newest;
+      for (final t in _tasks) {
+        if (t.done || t.failed) continue;
+        if (newest == null || t.addTime > newest.addTime) newest = t;
+      }
+      if (newest != null) _watchHash = newest.infoHash;
+    }
   }
 
   /// autoOpen：盯住的任务完成即自动打开其保存位置（只开一次）；
-  /// 失败或已从列表消失（被删）则停止等待
+  /// 服务端失败或已从列表消失（被删）则停止等待。下载慢/长时间无
+  /// 进度不算失败（那是展示层判定），继续等到完成或离开本页
   void _maybeAutoOpen() {
     final hash = _watchHash;
-    if (!widget.autoOpen || hash == null) return;
+    if (!widget.autoOpen && !Session.instance.autoOpenAfterDownload) return;
+    if (hash == null) return;
     OfflineTask? t;
     for (final x in _tasks) {
       if (x.infoHash == hash) {
@@ -172,14 +200,16 @@ class _TransferPageState extends State<TransferPage> {
       }
     }
     if (t == null) {
-      _watchHash = null; // 已不在列表（被删）
+      // 磁力页带回的目标可能尚未出现在列表（接口滞后），保留目标
+      // 继续等；其余来源视同被删，不再等待
+      if (widget.watchHash == null) _watchHash = null;
       return;
     }
     if (t.done) {
       _watchHash = null;
       _openTask(t);
-    } else if (t.failed || _shownFailed(t)) {
-      _watchHash = null; // 失败不再等待
+    } else if (t.failed) {
+      _watchHash = null; // 服务端真失败不再等待
     }
   }
 
@@ -319,13 +349,8 @@ class _TransferPageState extends State<TransferPage> {
   }
 
   /// 磁链展示：只保留 btih（magnet:?xt=urn:btih:…），dn/tr 等其余
-  /// 参数不展示；非磁链或无 btih 原样返回
-  static String _shortMagnet(String url) {
-    if (!url.startsWith('magnet:')) return url;
-    final m = RegExp(r'[?&]xt=urn:btih:([0-9A-Za-z]+)').firstMatch(url);
-    if (m == null) return url;
-    return 'magnet:?xt=urn:btih:${m.group(1)}';
-  }
+  /// 参数不展示；非磁链原样返回（http/ftp 等离线任务也是合法任务）
+  static String _shortMagnet(String url) => shortMagnet(url) ?? url;
 
   Widget _tile(OfflineTask t) {
     final failed = _shownFailed(t);
