@@ -777,11 +777,23 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     );
   }
 
-  /// 覆盖控件：右上倍速（仅手机）；底部一行 = 播放/暂停（左）· 进度条（中）。
-  /// 不放返回按钮（用户要求移除）：退出走系统返回手势/遥控器返回键
+  /// 覆盖控件：左上返回（仅手机）+ 右上倍速（仅手机）；底部一行 =
+  /// 播放/暂停（左）· 进度条（中）。电视两端入口都不放：退出走遥控器返回键
   List<Widget> _controls() {
     final c = _controller!;
     return [
+      // 返回按钮仅手机：手机保留点按退出路径；电视遥控器返回键退出
+      if (!Tv.isTv)
+        Positioned(
+          top: 0,
+          left: 0,
+          child: SafeArea(
+            child: IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
+        ),
       // 倍速入口仅手机：电视遥控器无法盲点透明入口，电视上干脆不构建
       // （也不进 D-pad 焦点遍历）
       if (!Tv.isTv)

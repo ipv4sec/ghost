@@ -67,7 +67,7 @@ class _TvHomePageState extends State<TvHomePage> {
   /// 的行不再抢焦点，但整页重拉后焦点需要有处可落，故 _reload 时复位）
   bool _autoFocusFirst = true;
 
-  // 根路由「再按一次返回退出」：上次返回时间 + 提示的自动清理
+  // 根路由「再来一次退出」：上次返回时间 + 提示的自动清理
   DateTime? _lastBackAt;
   Timer? _toastTimer;
   OverlayEntry? _toast;
@@ -252,8 +252,8 @@ class _TvHomePageState extends State<TvHomePage> {
     });
   }
 
-  /// 屏幕正中 toast「再按一次返回退出应用」；2 秒内第二次返回才真正退出
-  void _showExitHint() => _showToast('再按一次返回退出应用');
+  /// 屏幕正中 toast「再来一次退出应用」；2 秒内第二次返回才真正退出
+  void _showExitHint() => _showToast('再来一次退出应用');
 
   @override
   Widget build(BuildContext context) {

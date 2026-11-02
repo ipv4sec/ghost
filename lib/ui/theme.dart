@@ -243,10 +243,6 @@ class KindStyle {
 
 /// 圆形行图标：类型色圆底 + Material 类型图案（图案色统一按底色亮度
 /// 自动黑/白，见 KindStyle.iconColor；列表观感统一）。
-/// 有服务端缩略图时优先显示（视频 v_img / 图片 thumb / 文件夹封面 fco），
-/// 圆形裁剪、与图标同尺寸；加载中与失败均回退类型图标（不闪空白圈）。
-/// 走 Image.network：仅内存缓存不落盘（开发须知：用户文件内容
-/// 不缓存到本地磁盘）
 class FileLeadingIcon extends StatelessWidget {
   const FileLeadingIcon({super.key, required this.item, this.size = 40});
 
@@ -255,27 +251,6 @@ class FileLeadingIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final thumb = item.thumbUrl;
-    if (thumb == null) return _typeIcon();
-    return Container(
-      width: size,
-      height: size,
-      clipBehavior: Clip.antiAlias,
-      decoration: const BoxDecoration(shape: BoxShape.circle),
-      child: Image.network(
-        thumb,
-        fit: BoxFit.cover,
-        width: size,
-        height: size,
-        // 首帧到达前显示类型图标（wasSync = 命中内存缓存，直接出图）
-        frameBuilder: (ctx, child, frame, wasSync) =>
-            (wasSync || frame != null) ? child : _typeIcon(),
-        errorBuilder: (_, __, ___) => _typeIcon(),
-      ),
-    );
-  }
-
-  Widget _typeIcon() {
     return Container(
       width: size,
       height: size,

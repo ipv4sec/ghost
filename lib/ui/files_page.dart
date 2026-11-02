@@ -41,7 +41,7 @@ class FilesPage extends StatefulWidget {
   /// 初始目录；不传则从根目录开始
   final DirEntry? initialDir;
 
-  /// 是否为主页实例：主页根目录的返回手势走"再按一次返回退出"；
+  /// 是否为主页实例：主页根目录的返回手势走"再来一次退出"；
   /// 推入的实例在栈底直接 pop 回上一页
   final bool isHome;
 
@@ -92,7 +92,7 @@ class _FilesPageState extends State<FilesPage>
   /// 手机端恒为 false，行为不变
   bool _autoFocusFirstRow = Tv.isTv;
 
-  // 根目录"再按一次返回退出"：上次返回手势时间 + 底部提示的自动清理
+  // 根目录"再来一次退出"：上次返回手势时间 + 底部提示的自动清理
   DateTime? _lastBackAt;
   Timer? _exitToastTimer;
   OverlayEntry? _exitToast;
@@ -191,9 +191,9 @@ class _FilesPageState extends State<FilesPage>
     });
   }
 
-  /// 根目录"再按一次返回退出应用"（同款小灰泡，文案对触摸侧滑返回与
+  /// 根目录"再来一次退出应用"（同款小灰泡，文案对触摸侧滑返回与
   /// 遥控器返回键通用）
-  void _showExitHint() => _showToast('再按一次返回退出应用');
+  void _showExitHint() => _showToast('再来一次退出应用');
 
   DirEntry get _dir => _stack.last;
 
@@ -461,7 +461,7 @@ class _FilesPageState extends State<FilesPage>
           ? SystemUiOverlayStyle.light
           : SystemUiOverlayStyle.dark,
       child: PopScope(
-      // 主页实例拦截所有返回手势（子目录返回上级、根目录"再按一次返回退出"）；
+      // 主页实例拦截所有返回手势（子目录返回上级、根目录"再来一次退出"）；
       // 推入的实例在栈底直接 pop 回上一页
       canPop: !widget.isHome && _stack.length <= 1,
       onPopInvokedWithResult: (didPop, _) {
